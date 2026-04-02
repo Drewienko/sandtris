@@ -1,0 +1,33 @@
+[project]
+name = "sandtris"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.4",
+    "pygame>=2.6.1",
+]
+
+[project.optional-dependencies]
+ai-llm = [
+    "google-generativeai>=0.8.6",
+    "httpx>=0.28.1",
+]
+ai-torch = [
+    "torch>=2.11.0",
+]
+api = [
+    "fastapi>=0.135.3",
+    "uvicorn[standard]>=0.42.0",
+]
+web = [
+    "pygbag>=0.9.3",
+]
+
+[dependency-groups]
+dev = [
+    "pygbag>=0.9.3",
+    "pytest>=9.0.2",
+    "ruff>=0.15.9",
+]
