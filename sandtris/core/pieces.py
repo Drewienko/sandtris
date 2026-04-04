@@ -1,14 +1,6 @@
 import numpy as np
 
-SHAPE_COLOR_IDS = {
-    "I": 1,
-    "J": 2,
-    "L": 3,
-    "O": 4,
-    "S": 5,
-    "T": 6,
-    "Z": 7,
-}
+PIECE_COLOR_IDS = (1, 2, 3, 4, 5, 6, 7)
 
 SHAPES = {
     "I": np.array(
@@ -25,7 +17,14 @@ SHAPES = {
 
 
 class Tetromino:
-    def __init__(self, shape_name: str, x: int, y: int, scale: int = 4):
+    def __init__(
+        self,
+        shape_name: str,
+        x: int,
+        y: int,
+        color_id: int,
+        scale: int = 4,
+    ):
         self.name = shape_name
         self.scale = scale
         base_shape = SHAPES[shape_name].copy()
@@ -36,7 +35,7 @@ class Tetromino:
         else:
             self.shape = base_shape
 
-        self.color = SHAPE_COLOR_IDS[shape_name]
+        self.color = color_id
         self.x = x
         self.y = y
 

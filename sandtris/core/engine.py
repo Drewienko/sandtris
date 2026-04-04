@@ -1,8 +1,8 @@
 import random
 
 from .grid import Grid
-from .pieces import Tetromino, SHAPES
 from .config import GameConfig
+from .pieces import PIECE_COLOR_IDS, SHAPES, Tetromino
 
 
 class SandtrisEngine:
@@ -18,13 +18,18 @@ class SandtrisEngine:
 
     def spawn_piece(self) -> None:
         shape_name = random.choice(list(SHAPES.keys()))
+        color_id = random.choice(PIECE_COLOR_IDS)
         base_shape = SHAPES[shape_name]
         piece_width = base_shape.shape[1] * self.config.scale
         start_x = (self.grid.width - piece_width) // 2
         start_y = 0
 
         self.active_piece = Tetromino(
-            shape_name, start_x, start_y, scale=self.config.scale
+            shape_name,
+            start_x,
+            start_y,
+            color_id,
+            scale=self.config.scale,
         )
 
         if self._check_collision(self.active_piece):

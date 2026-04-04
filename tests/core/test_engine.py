@@ -1,3 +1,5 @@
+import itertools
+
 from sandtris.core.config import GameConfig
 from sandtris.core.engine import SandtrisEngine
 
@@ -33,3 +35,20 @@ def test_tick_resets_combo_when_timer_expires() -> None:
 
     assert engine.combo == 1
     assert engine.combo_timer == 0
+
+
+def test_spawn_piece_selects_shape_and_color_independently(
+    monkeypatch,
+) -> None:
+    choices = itertools.cycle(["I", 5])
+
+    def fake_choice(_values):
+        return next(choices)
+
+    monkeypatch.setattr("sandtris.core.engine.random.choice", fake_choice)
+
+    engine = SandtrisEngine(GameConfig(scale=2))
+
+    assert engine.active_piece is not None
+    assert engine.active_piece.name == "I"
+    assert engine.active_piece.color == 5
