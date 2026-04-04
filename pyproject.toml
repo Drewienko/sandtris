@@ -16,8 +16,8 @@ web = ["pygbag>=0.9.3"]
 dev = ["pygbag>=0.9.3", "pytest>=9.0.2", "ruff>=0.15.9"]
 
 [project.scripts]
-sandtris = "main:main"
-sandtris-train = "train:main"
+sandtris = "sandtris.main:main"
+sandtris-train = "sandtris.train:main"
 
 [build-system]
 requires = ["hatchling"]
