@@ -1,3 +1,4 @@
+import pygame
 from dataclasses import dataclass, field
 
 
@@ -8,6 +9,12 @@ class GameConfig:
     headless: bool = False
     fall_delay: int = 30
     fast_fall_delay: int = 1
+    key_left: int = pygame.K_LEFT
+    key_right: int = pygame.K_RIGHT
+    key_up: int = pygame.K_UP
+    key_down: int = pygame.K_DOWN
+    key_drop: int = pygame.K_SPACE
+    key_pause: int = pygame.K_ESCAPE
     width: int = field(init=False)
     height: int = field(init=False)
 

@@ -52,3 +52,17 @@ def test_spawn_piece_selects_shape_and_color_independently(
     assert engine.active_piece is not None
     assert engine.active_piece.name == "I"
     assert engine.active_piece.color == 5
+
+
+def test_check_game_over_detects_blocked_spawn() -> None:
+    engine = SandtrisEngine(GameConfig(scale=2))
+    engine.grid.data.fill(0)
+    engine.active_piece = None
+    engine.next_shape_name = "O"
+    engine.next_color_id = 3
+
+    spawn_x, spawn_y = engine._get_spawn_position("O")
+    engine.grid.add_sand(spawn_x, spawn_y, 4)
+
+    assert engine.check_game_over() is True
+    assert engine.game_over is True

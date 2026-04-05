@@ -6,25 +6,38 @@ from .pieces import PIECE_COLOR_IDS, SHAPES, Tetromino
 
 
 class SandtrisEngine:
+    active_piece: Tetromino | None
+    next_shape_name: str | None
+    next_color_id: int | None
+
     def __init__(self, config: GameConfig) -> None:
         self.config = config
         self.grid = Grid(config.width, config.height)
         self.active_piece: Tetromino | None = None
+        self.next_shape_name: str | None = None
+        self.next_color_id: int | None = None
         self.game_over = False
         self.score = 0
         self.combo = 1
         self.combo_timer = 0
+        self.max_combo = 1
+        self.level = 1
         self.spawn_piece()
 
-    def spawn_piece(self) -> None:
-        shape_name = random.choice(list(SHAPES.keys()))
-        color_id = random.choice(PIECE_COLOR_IDS)
+    def _roll_next_piece(self) -> None:
+        self.next_shape_name = random.choice(list(SHAPES.keys()))
+        self.next_color_id = random.choice(PIECE_COLOR_IDS)
+
+    def _get_spawn_position(self, shape_name: str) -> tuple[int, int]:
         base_shape = SHAPES[shape_name]
         piece_width = base_shape.shape[1] * self.config.scale
         start_x = (self.grid.width - piece_width) // 2
         start_y = 0
+        return start_x, start_y
 
-        self.active_piece = Tetromino(
+    def _create_piece(self, shape_name: str, color_id: int) -> Tetromino:
+        start_x, start_y = self._get_spawn_position(shape_name)
+        return Tetromino(
             shape_name,
             start_x,
             start_y,
@@ -32,8 +45,36 @@ class SandtrisEngine:
             scale=self.config.scale,
         )
 
-        if self._check_collision(self.active_piece):
-            self.game_over = True
+    def check_game_over(self) -> bool:
+        if self.active_piece is not None:
+            self.game_over = self._check_collision(self.active_piece)
+            return self.game_over
+
+        if self.next_shape_name is None or self.next_color_id is None:
+            self._roll_next_piece()
+
+        assert self.next_shape_name is not None
+        assert self.next_color_id is not None
+
+        test_piece = self._create_piece(
+            self.next_shape_name, self.next_color_id
+        )
+        self.game_over = self._check_collision(test_piece)
+        return self.game_over
+
+    def spawn_piece(self) -> None:
+        if self.next_shape_name is None or self.next_color_id is None:
+            self._roll_next_piece()
+
+        assert self.next_shape_name is not None
+        assert self.next_color_id is not None
+
+        shape_name = self.next_shape_name
+        color_id = self.next_color_id
+        self.active_piece = self._create_piece(shape_name, color_id)
+
+        self._roll_next_piece()
+        self.check_game_over()
 
     def _check_collision(self, piece: Tetromino) -> bool:
         for x, y, _ in piece.get_cells():
@@ -89,4 +130,6 @@ class SandtrisEngine:
         if cleared_pixels > 0:
             self.score += cleared_pixels * self.combo
             self.combo = min(10, self.combo + 1)
+            self.max_combo = max(self.max_combo, self.combo)
+            self.level = (self.score // 2000) + 1
             self.combo_timer = self.config.fps * 3
