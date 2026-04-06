@@ -1,9 +1,10 @@
+import asyncio
 import argparse
 from sandtris.core.config import GameConfig
 from sandtris.runners.pygame_runner import PygameRunner
 
 
-def main() -> int:
+async def amain() -> int:
     parser = argparse.ArgumentParser(description="Sandtris")
     parser.add_argument(
         "--headless", action="store_true", help="Run without UI"
@@ -13,7 +14,15 @@ def main() -> int:
     config = GameConfig(headless=args.headless)
 
     runner = PygameRunner(config=config)
-    runner.run()
+    await runner.run()
+    return 0
+
+
+def main() -> int:
+    try:
+        asyncio.run(amain())
+    except KeyboardInterrupt:
+        pass
     return 0
 
 

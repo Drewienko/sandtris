@@ -9,12 +9,12 @@ class GameConfig:
     headless: bool = False
     fall_delay: int = 30
     fast_fall_delay: int = 1
-    key_left: int = pygame.K_LEFT
-    key_right: int = pygame.K_RIGHT
-    key_up: int = pygame.K_UP
-    key_down: int = pygame.K_DOWN
-    key_drop: int = pygame.K_SPACE
-    key_pause: int = pygame.K_ESCAPE
+    key_left: tuple[int, ...] = (pygame.K_LEFT, pygame.K_a)
+    key_right: tuple[int, ...] = (pygame.K_RIGHT, pygame.K_d)
+    key_up: tuple[int, ...] = (pygame.K_UP, pygame.K_w)
+    key_down: tuple[int, ...] = (pygame.K_DOWN, pygame.K_s)
+    key_drop: tuple[int, ...] = (pygame.K_SPACE, pygame.K_RETURN)
+    key_pause: tuple[int, ...] = (pygame.K_ESCAPE, pygame.K_p)
     width: int = field(init=False)
     height: int = field(init=False)
 

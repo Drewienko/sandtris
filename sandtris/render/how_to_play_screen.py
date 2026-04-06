@@ -5,6 +5,7 @@ from sandtris.render.ui import (
     PixelButton,
     ThemeColors,
     UIDimensions,
+    draw_keycap,
     draw_panel,
 )
 
@@ -86,15 +87,17 @@ class HowToPlayScreen:
 
         controls = [
             (
-                f"{pygame.key.name(config.key_left).upper()} / {pygame.key.name(config.key_right).upper()}",
+                [pygame.key.name(k).upper() for k in config.key_left]
+                + [pygame.key.name(k).upper() for k in config.key_right],
                 "Move Left / Right",
             ),
-            (f"{pygame.key.name(config.key_up).upper()}", "Rotate"),
+            ([pygame.key.name(k).upper() for k in config.key_up], "Rotate"),
             (
-                f"{pygame.key.name(config.key_down).upper()} / {pygame.key.name(config.key_drop).upper()}",
+                [pygame.key.name(k).upper() for k in config.key_down]
+                + [pygame.key.name(k).upper() for k in config.key_drop],
                 "Fast Drop",
             ),
-            (f"{pygame.key.name(config.key_pause).upper()}", "Pause"),
+            ([pygame.key.name(k).upper() for k in config.key_pause], "Pause"),
         ]
 
         y_offset = panel.top + 100
@@ -105,20 +108,37 @@ class HowToPlayScreen:
             y_offset += 30
 
         y_offset += 10
-        for key, action in controls:
-            key_text = self.body_font.render(key, True, self.theme.accent_text)
+        for keys, action in controls:
             action_text = self.body_font.render(
                 action, True, self.theme.body_text
-            )
-
-            key_rect = key_text.get_rect(
-                right=panel.centerx - 20, top=y_offset
             )
             action_rect = action_text.get_rect(
                 left=panel.centerx + 20, top=y_offset
             )
 
-            surface.blit(key_text, key_rect)
+            right_edge = panel.centerx - 20
+            key_rects = []
+            for label in reversed(keys):
+                text = self.body_font.render(label, True, self.theme.body_text)
+                key_width = text.get_width() + self.dims.keycap_padding_x * 2
+                key_rect = draw_keycap(
+                    surface,
+                    label,
+                    (right_edge - key_width // 2, y_offset + 10),
+                    self.body_font,
+                    self.theme,
+                    self.dims,
+                )
+                key_rects.append(key_rect)
+                right_edge = key_rect.left - 8
+
+            if len(keys) > 1:
+                slash = self.body_font.render("/", True, self.theme.body_text)
+                slash_rect = slash.get_rect(
+                    center=(key_rects[0].left + 4, y_offset + 10)
+                )
+                surface.blit(slash, slash_rect)
+
             surface.blit(action_text, action_rect)
             y_offset += 40
 

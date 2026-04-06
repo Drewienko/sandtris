@@ -30,26 +30,26 @@ class GameOverScreen:
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        modal = pygame.Rect(0, 0, modal_width, 360)
+        modal = pygame.Rect(0, 0, modal_width, 390)
         modal.center = surface_rect.center
 
         return {
             "modal": modal,
             "restart": pygame.Rect(
                 modal.left + margin,
-                modal.top + 170,
+                modal.top + 210,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "save": pygame.Rect(
                 modal.left + margin,
-                modal.top + 170 + step,
+                modal.top + 210 + step,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "menu": pygame.Rect(
                 modal.left + margin,
-                modal.top + 170 + step * 2,
+                modal.top + 210 + step * 2,
                 modal.width - margin * 2,
                 btn_h,
             ),
@@ -76,6 +76,7 @@ class GameOverScreen:
         score: int,
         level: int,
         max_combo: int,
+        status_message: str,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
     ) -> None:
@@ -121,6 +122,14 @@ class GameOverScreen:
             center=(modal.centerx, modal.top + 136)
         )
         surface.blit(combo_text, combo_rect)
+
+        status_text = self.body_font.render(
+            status_message, True, self.theme.body_text
+        )
+        status_rect = status_text.get_rect(
+            center=(modal.centerx, modal.top + 174)
+        )
+        surface.blit(status_text, status_rect)
 
         hov_restart = layout["restart"].collidepoint(mouse_pos)
         self.restart_button.draw(

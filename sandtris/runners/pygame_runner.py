@@ -1,3 +1,5 @@
+import json
+import sys
 import pygame
 import numpy as np
 from pathlib import Path
@@ -8,27 +10,55 @@ from sandtris.core.config import GameConfig
 from sandtris.render.gameplay_screen import GameplayScreen
 from sandtris.render.pause_screen import PauseScreen
 from sandtris.render.game_over_screen import GameOverScreen
+from sandtris.render.settings_screen import SettingsScreen
 from sandtris.render.main_menu_screen import MainMenuScreen
 from sandtris.render.how_to_play_screen import HowToPlayScreen
+from sandtris.render.ui import (
+    SAND_PALETTE_PRESETS,
+    THEME_PRESETS,
+    build_color_palette,
+)
 
-COLOR_PALETTE = {
-    0: (20, 20, 30),
-    1: (0, 255, 255),
-    2: (0, 0, 255),
-    3: (255, 165, 0),
-    4: (255, 255, 0),
-    5: (0, 255, 0),
-    6: (128, 0, 128),
-    7: (255, 0, 0),
-}
+# Try to get the window object for pygbag localStorage
+window = None
+if sys.platform == "emscripten":
+    try:
+        import platform
 
-for i in range(1, 8):
-    r, g, b = COLOR_PALETTE[i]
-    COLOR_PALETTE[i + 10] = (
-        max(0, r - 80),
-        max(0, g - 80),
-        max(0, b - 80),
-    )
+        window = platform.window
+    except Exception:
+        pass
+
+
+def load_persistent_data(key: str, fallback_path: Path) -> dict:
+    if window:
+        try:
+            val = window.localStorage.getItem(key)
+            if val:
+                return json.loads(val)
+        except Exception:
+            pass
+    elif fallback_path.exists():
+        try:
+            return json.loads(fallback_path.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def save_persistent_data(key: str, fallback_path: Path, data: dict) -> None:
+    json_str = json.dumps(data, indent=2)
+    if window:
+        try:
+            window.localStorage.setItem(key, json_str)
+        except Exception:
+            pass
+    else:
+        try:
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            fallback_path.write_text(json_str)
+        except Exception:
+            pass
 
 
 class GameState(Enum):
@@ -47,6 +77,36 @@ class PygameRunner:
         self.config = config
         self.engine = engine or SandtrisEngine(config)
         self.state = GameState.MAIN_MENU
+        self.previous_state = GameState.MAIN_MENU
+        self.theme_name = "Egyptian"
+        self.sand_palette_name = "Classic"
+
+        self.high_score_path = (
+            Path(__file__).parent.parent.parent / "data" / "high_score.json"
+        )
+        self.settings_path = (
+            Path(__file__).parent.parent.parent / "data" / "settings.json"
+        )
+
+        settings_data = load_persistent_data(
+            "sandtris_settings", self.settings_path
+        )
+        if (
+            "theme_name" in settings_data
+            and settings_data["theme_name"] in THEME_PRESETS
+        ):
+            self.theme_name = settings_data["theme_name"]
+        if (
+            "sand_palette_name" in settings_data
+            and settings_data["sand_palette_name"] in SAND_PALETTE_PRESETS
+        ):
+            self.sand_palette_name = settings_data["sand_palette_name"]
+
+        self.color_palette = build_color_palette(
+            THEME_PRESETS[self.theme_name].screen_bg,
+            SAND_PALETTE_PRESETS[self.sand_palette_name],
+        )
+        self.game_over_status = "Save your score"
 
         if not self.config.headless:
             pygame.init()
@@ -54,7 +114,7 @@ class PygameRunner:
             pygame.display.set_caption("Sandtris")
             self.clock = pygame.time.Clock()
             font_path = (
-                Path(__file__).parent.parent.parent
+                Path(__file__).parent.parent
                 / "assets"
                 / "fonts"
                 / "PressStart2P.ttf"
@@ -70,12 +130,16 @@ class PygameRunner:
             self.game_over_view = GameOverScreen(
                 self.title_font, self.body_font
             )
+            self.settings_view = SettingsScreen(
+                self.title_font, self.body_font
+            )
             self.main_menu_view = MainMenuScreen(
                 self.title_font, self.body_font
             )
             self.how_to_play_view = HowToPlayScreen(
                 self.title_font, self.body_font
             )
+            self._apply_theme(self.theme_name)
             pygame.key.set_repeat(200, 50)
 
         self.fall_timer = 0
@@ -94,8 +158,97 @@ class PygameRunner:
                 self._handle_main_menu_events(event)
             elif self.state == GameState.PLAYING:
                 self._handle_playing_events(event)
+            elif self.state == GameState.SETTINGS:
+                self._handle_settings_events(event)
             elif self.state == GameState.HOW_TO_PLAY:
                 self._handle_how_to_play_events(event)
+
+    def _save_settings(self) -> None:
+        save_persistent_data(
+            "sandtris_settings",
+            self.settings_path,
+            {
+                "theme_name": self.theme_name,
+                "sand_palette_name": self.sand_palette_name,
+            },
+        )
+
+    def _apply_theme(self, theme_name: str) -> None:
+        self.theme_name = theme_name
+        theme = THEME_PRESETS[theme_name]
+        self.screen_view.theme = theme
+        self.pause_view.theme = theme
+        self.game_over_view.theme = theme
+        self.main_menu_view.theme = theme
+        self.how_to_play_view.theme = theme
+        self.settings_view.theme = theme
+        self.color_palette = build_color_palette(
+            theme.screen_bg,
+            SAND_PALETTE_PRESETS[self.sand_palette_name],
+        )
+        self._save_settings()
+
+    def _apply_sand_palette(self, palette_name: str) -> None:
+        self.sand_palette_name = palette_name
+        self.color_palette = build_color_palette(
+            THEME_PRESETS[self.theme_name].screen_bg,
+            SAND_PALETTE_PRESETS[self.sand_palette_name],
+        )
+        self._save_settings()
+
+    def _save_high_score(self) -> None:
+        current = {
+            "score": self.engine.score,
+            "level": self.engine.level,
+            "max_combo": self.engine.max_combo,
+        }
+        saved = load_persistent_data(
+            "sandtris_highscore", self.high_score_path
+        )
+
+        if current["score"] > saved.get("score", 0):
+            save_persistent_data(
+                "sandtris_highscore", self.high_score_path, current
+            )
+            self.game_over_status = "New high score saved"
+        else:
+            self.game_over_status = "Score saved, best unchanged"
+
+    def _open_settings(self) -> None:
+        self.previous_state = self.state
+        self.state = GameState.SETTINGS
+
+    def _restart_game(self) -> None:
+        self.engine = SandtrisEngine(self.config)
+        self.paused = False
+        self.fast_dropping = False
+        self.current_fall_delay = self.config.fall_delay
+        self.pause_view.confirming_restart = False
+        self.pause_view.confirming_menu = False
+        self.game_over_status = "Save your score"
+
+    def _handle_settings_events(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.mouse_down = True
+            screen_rect = self.screen.get_rect()
+            theme_name = self.settings_view.theme_at(screen_rect, event.pos)
+            if theme_name is not None:
+                self._apply_theme(theme_name)
+                return
+            sand_name = self.settings_view.sand_palette_at(
+                screen_rect, event.pos
+            )
+            if sand_name is not None:
+                self._apply_sand_palette(sand_name)
+                return
+            if self.settings_view.back_button_contains(screen_rect, event.pos):
+                self.state = self.previous_state
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.mouse_down = False
+
+        if event.type == pygame.KEYDOWN and event.key in self.config.key_pause:
+            self.state = self.previous_state
 
     def _handle_how_to_play_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -109,6 +262,9 @@ class PygameRunner:
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
 
+        if event.type == pygame.KEYDOWN and event.key in self.config.key_pause:
+            self.state = GameState.MAIN_MENU
+
     def _handle_main_menu_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
@@ -116,15 +272,12 @@ class PygameRunner:
             if self.main_menu_view.play_button_contains(
                 screen_rect, event.pos
             ):
-                self.engine = SandtrisEngine(self.config)
+                self._restart_game()
                 self.state = GameState.PLAYING
-                self.paused = False
-                self.fast_dropping = False
-                self.current_fall_delay = self.config.fall_delay
             elif self.main_menu_view.settings_button_contains(
                 screen_rect, event.pos
             ):
-                print("GO TO SETTINGS")
+                self._open_settings()
             elif self.main_menu_view.help_button_contains(
                 screen_rect, event.pos
             ):
@@ -146,31 +299,26 @@ class PygameRunner:
                 if self.game_over_view.restart_button_contains(
                     screen_rect, event.pos
                 ):
-                    self.engine = SandtrisEngine(self.config)
-                    self.paused = False
-                    self.fast_dropping = False
-                    self.current_fall_delay = self.config.fall_delay
+                    self._restart_game()
                     return
                 if self.game_over_view.save_button_contains(
                     screen_rect, event.pos
                 ):
-                    print("SAVE SCORE CLICKED")
+                    self._save_high_score()
                     return
                 if self.game_over_view.menu_button_contains(
                     screen_rect, event.pos
                 ):
                     self.state = GameState.MAIN_MENU
+                    self.paused = False
                     return
             elif self.paused:
                 if self.pause_view.yes_button_contains(screen_rect, event.pos):
                     if self.pause_view.confirming_restart:
-                        self.engine = SandtrisEngine(self.config)
-                        self.paused = False
-                        self.fast_dropping = False
-                        self.current_fall_delay = self.config.fall_delay
-                        self.pause_view.confirming_restart = False
+                        self._restart_game()
                     elif self.pause_view.confirming_menu:
                         self.state = GameState.MAIN_MENU
+                        self.paused = False
                         self.pause_view.confirming_menu = False
                     return
                 if self.pause_view.no_button_contains(screen_rect, event.pos):
@@ -191,7 +339,7 @@ class PygameRunner:
                 if self.pause_view.settings_button_contains(
                     screen_rect, event.pos
                 ):
-                    print("SETTINGS CLICKED")
+                    self._open_settings()
                     return
                 if self.pause_view.menu_button_contains(
                     screen_rect, event.pos
@@ -209,7 +357,7 @@ class PygameRunner:
             self.mouse_down = False
 
         if event.type == pygame.KEYDOWN:
-            if event.key == self.config.key_pause:
+            if event.key in self.config.key_pause:
                 if not self.engine.game_over:
                     self.paused = not self.paused
                     if not self.paused:
@@ -223,13 +371,16 @@ class PygameRunner:
             if self.fast_dropping:
                 return
 
-            if event.key == self.config.key_left:
+            if event.key in self.config.key_left:
                 self.engine.move_active_piece(-1, 0)
-            elif event.key == self.config.key_right:
+            elif event.key in self.config.key_right:
                 self.engine.move_active_piece(1, 0)
-            elif event.key == self.config.key_up:
+            elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
-            elif event.key in (self.config.key_down, self.config.key_drop):
+            elif (
+                event.key in self.config.key_down
+                or event.key in self.config.key_drop
+            ):
                 self.fast_dropping = True
                 self.current_fall_delay = self.config.fast_fall_delay
 
@@ -273,17 +424,27 @@ class PygameRunner:
             )
             pygame.display.flip()
             return
+        elif self.state == GameState.SETTINGS:
+            self.settings_view.draw(
+                self.screen,
+                self.theme_name,
+                self.sand_palette_name,
+                pygame.mouse.get_pos(),
+                self.mouse_down,
+            )
+            pygame.display.flip()
+            return
 
         color_data = np.zeros(
             (self.config.width, self.config.height, 3), dtype=np.uint8
         )
-        color_data[:, :] = COLOR_PALETTE[0]
+        color_data[:, :] = self.color_palette[0]
 
         for y in range(self.config.height):
             for x in range(self.config.width):
                 val = self.engine.grid.data[y, x]
                 if val > 0:
-                    color_data[x, y] = COLOR_PALETTE[val]
+                    color_data[x, y] = self.color_palette[val]
 
         if self.engine.active_piece:
             for bx, by, color in self.engine.active_piece.get_cells():
@@ -291,7 +452,7 @@ class PygameRunner:
                     0 <= bx < self.config.width
                     and 0 <= by < self.config.height
                 ):
-                    color_data[bx, by] = COLOR_PALETTE[color]
+                    color_data[bx, by] = self.color_palette[color]
 
         surf = pygame.surfarray.make_surface(color_data)
         self.screen_view.draw(
@@ -304,7 +465,7 @@ class PygameRunner:
             self.engine.next_shape_name,
             self.engine.next_color_id,
             self.config.scale,
-            COLOR_PALETTE,
+            self.color_palette,
             pygame.mouse.get_pos(),
             self.mouse_down,
         )
@@ -315,6 +476,7 @@ class PygameRunner:
                 self.engine.score,
                 self.engine.level,
                 self.engine.max_combo,
+                self.game_over_status,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
             )
@@ -327,7 +489,9 @@ class PygameRunner:
 
         pygame.display.flip()
 
-    def run(self) -> None:
+    async def run(self) -> None:
+        import asyncio
+
         while self.running:
             if not self.config.headless:
                 self.handle_events()
@@ -337,6 +501,8 @@ class PygameRunner:
             if not self.config.headless:
                 self.draw()
                 self.clock.tick(self.config.fps)
+
+            await asyncio.sleep(0)
 
         if not self.config.headless:
             pygame.quit()
