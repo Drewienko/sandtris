@@ -110,9 +110,14 @@ class PygameRunner:
 
         if not self.config.headless:
             pygame.init()
-            self.screen = pygame.display.set_mode((720, 900), pygame.RESIZABLE)
+            self.screen = pygame.display.set_mode(
+                self._initial_window_size(), pygame.RESIZABLE
+            )
             pygame.display.set_caption("Sandtris")
             self.clock = pygame.time.Clock()
+            if window:
+                window.canvas.style.imageRendering = "pixelated"
+                window.canvas.style.setProperty("image-rendering", "pixelated")
             font_path = (
                 Path(__file__).parent.parent
                 / "assets"
@@ -142,17 +147,45 @@ class PygameRunner:
             self._apply_theme(self.theme_name)
             pygame.key.set_repeat(200, 50)
 
-        self.fall_timer = 0
         self.current_fall_delay = self.config.fall_delay
         self.running = True
         self.fast_dropping = False
         self.paused = False
         self.mouse_down = False
+        self.piece_drop_accumulator_ms = 0.0
+        self.sand_step_accumulator_ms = 0.0
+
+    def _initial_window_size(self) -> tuple[int, int]:
+        if window:
+            width = max(720, int(window.innerWidth))
+            height = max(900, int(window.innerHeight))
+            return width, height
+        return 720, 900
+
+    def _sync_window_size(self) -> None:
+        if not window:
+            return
+        width = max(720, int(window.innerWidth))
+        height = max(900, int(window.innerHeight))
+        if self.screen.get_size() != (width, height):
+            self.screen = pygame.display.set_mode(
+                (width, height), pygame.RESIZABLE
+            )
+
+    def _piece_drop_interval_ms(self) -> float:
+        return (self.current_fall_delay / self.config.fps) * 1000.0
+
+    def _sand_step_interval_ms(self) -> float:
+        return 1000.0 / self.config.fps
 
     def handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.VIDEORESIZE and not window:
+                self.screen = pygame.display.set_mode(
+                    event.size, pygame.RESIZABLE
+                )
 
             if self.state == GameState.MAIN_MENU:
                 self._handle_main_menu_events(event)
@@ -223,6 +256,8 @@ class PygameRunner:
         self.paused = False
         self.fast_dropping = False
         self.current_fall_delay = self.config.fall_delay
+        self.piece_drop_accumulator_ms = 0.0
+        self.sand_step_accumulator_ms = 0.0
         self.pause_view.confirming_restart = False
         self.pause_view.confirming_menu = False
         self.game_over_status = "Save your score"
@@ -384,7 +419,7 @@ class PygameRunner:
                 self.fast_dropping = True
                 self.current_fall_delay = self.config.fast_fall_delay
 
-    def update(self) -> None:
+    def update(self, dt_ms: float) -> None:
         if self.state != GameState.PLAYING:
             return
 
@@ -392,16 +427,21 @@ class PygameRunner:
             return
 
         if not self.engine.game_over:
-            self.fall_timer += 1
-            if self.fall_timer >= self.current_fall_delay:
-                self.fall_timer = 0
+            self.piece_drop_accumulator_ms += dt_ms
+            piece_drop_interval_ms = self._piece_drop_interval_ms()
+            while self.piece_drop_accumulator_ms >= piece_drop_interval_ms:
+                self.piece_drop_accumulator_ms -= piece_drop_interval_ms
                 if self.engine.active_piece:
                     if not self.engine.move_active_piece(0, 1):
                         self.engine.lock_piece()
                         self.fast_dropping = False
                         self.current_fall_delay = self.config.fall_delay
 
-        self.engine.tick()
+        self.sand_step_accumulator_ms += dt_ms
+        sand_step_interval_ms = self._sand_step_interval_ms()
+        while self.sand_step_accumulator_ms >= sand_step_interval_ms:
+            self.sand_step_accumulator_ms -= sand_step_interval_ms
+            self.engine.tick(sand_step_interval_ms)
 
     def draw(self) -> None:
         if self.config.headless:
@@ -492,15 +532,18 @@ class PygameRunner:
     async def run(self) -> None:
         import asyncio
 
+        target_frame_ms = 1000.0 / self.config.fps
         while self.running:
+            dt_ms = target_frame_ms
             if not self.config.headless:
                 self.handle_events()
+                self._sync_window_size()
+                dt_ms = float(self.clock.tick(self.config.fps))
 
-            self.update()
+            self.update(dt_ms)
 
             if not self.config.headless:
                 self.draw()
-                self.clock.tick(self.config.fps)
 
             await asyncio.sleep(0)
 

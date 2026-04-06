@@ -32,7 +32,7 @@ jobs:
 
       - name: Build WebAssembly package
         run: |
-          uv run pygbag --build sandtris
+          uv run pygbag --build .
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -40,7 +40,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: sandtris/build/web
+          path: build/web
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -19,7 +19,7 @@ class SandtrisEngine:
         self.game_over = False
         self.score = 0
         self.combo = 1
-        self.combo_timer = 0
+        self.combo_timer_ms = 0.0
         self.max_combo = 1
         self.level = 1
         self.spawn_piece()
@@ -115,15 +115,18 @@ class SandtrisEngine:
         self.active_piece = None
         self.spawn_piece()
 
-    def tick(self) -> None:
+    def tick(self, dt_ms: float | None = None) -> None:
         if self.game_over:
             return
 
+        if dt_ms is None:
+            dt_ms = 1000.0 / self.config.fps
+
         self.grid.update_sand()
 
-        if self.combo_timer > 0:
-            self.combo_timer -= 1
-            if self.combo_timer == 0:
+        if self.combo_timer_ms > 0:
+            self.combo_timer_ms = max(0.0, self.combo_timer_ms - dt_ms)
+            if self.combo_timer_ms == 0.0:
                 self.combo = 1
 
         cleared_pixels = self.grid.check_line_clears()
@@ -132,4 +135,4 @@ class SandtrisEngine:
             self.combo = min(10, self.combo + 1)
             self.max_combo = max(self.max_combo, self.combo)
             self.level = (self.score // 2000) + 1
-            self.combo_timer = self.config.fps * 3
+            self.combo_timer_ms = 3000.0

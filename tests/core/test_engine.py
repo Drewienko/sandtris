@@ -21,20 +21,20 @@ def test_tick_scores_cleared_pixels_and_starts_combo() -> None:
 
     assert engine.score == engine.grid.width
     assert engine.combo == 2
-    assert engine.combo_timer == engine.config.fps * 3
+    assert engine.combo_timer_ms == 3000.0
 
 
 def test_tick_resets_combo_when_timer_expires() -> None:
     engine = SandtrisEngine(GameConfig(scale=2))
     engine.combo = 4
-    engine.combo_timer = 1
+    engine.combo_timer_ms = 1.0
     engine.active_piece = None
     engine.grid.data.fill(0)
 
     engine.tick()
 
     assert engine.combo == 1
-    assert engine.combo_timer == 0
+    assert engine.combo_timer_ms == 0.0
 
 
 def test_spawn_piece_selects_shape_and_color_independently(

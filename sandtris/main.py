@@ -9,7 +9,7 @@ async def amain() -> int:
     parser.add_argument(
         "--headless", action="store_true", help="Run without UI"
     )
-    args = parser.parse_args()
+    args, _unknown = parser.parse_known_args()
 
     config = GameConfig(headless=args.headless)
 
