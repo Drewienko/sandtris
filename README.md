@@ -1,6 +1,6 @@
 # Sandtris
 
-[![Play in Browser](https://img.shields.io/badge/Play_in_Browser-blue?style=for-the-badge&logo=web)](https://yourusername.github.io/sandtris/)
+[![Play in Browser](https://img.shields.io/badge/Play_in_Browser-blue?style=for-the-badge&logo=web)](https://Drewienko.github.io/sandtris/)
 
 Sandtris clone built with pygame.
 
@@ -21,7 +21,7 @@ To run Sandtris locally, you need Python 3.12+ and `uv`.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/sandtris.git
+git clone https://github.com/Drewienko/sandtris.git
 cd sandtris
 
 # Run the game using uv
