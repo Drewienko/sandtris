@@ -4,23 +4,23 @@ from sandtris.core.config import GameConfig
 from sandtris.runners.pygame_runner import PygameRunner
 
 
-async def amain() -> int:
+def _make_runner(argv: list[str] | None = None) -> PygameRunner:
     parser = argparse.ArgumentParser(description="Sandtris")
     parser.add_argument(
         "--headless", action="store_true", help="Run without UI"
     )
-    args, _unknown = parser.parse_known_args()
+    args, _unknown = parser.parse_known_args(argv)
+    return PygameRunner(config=GameConfig(headless=args.headless))
 
-    config = GameConfig(headless=args.headless)
 
-    runner = PygameRunner(config=config)
-    await runner.run()
+async def amain() -> int:
+    await _make_runner().run_async()
     return 0
 
 
 def main() -> int:
     try:
-        asyncio.run(amain())
+        _make_runner().run()
     except KeyboardInterrupt:
         pass
     return 0

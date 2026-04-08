@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import pygame
 import numpy as np
@@ -109,6 +110,8 @@ class PygameRunner:
         self.game_over_status = "Save your score"
 
         if not self.config.headless:
+            if not window and os.environ.get("WAYLAND_DISPLAY"):
+                os.environ.setdefault("SDL_VIDEODRIVER", "wayland")
             pygame.init()
             self.screen = pygame.display.set_mode(
                 self._initial_window_size(), pygame.RESIZABLE
@@ -183,9 +186,12 @@ class PygameRunner:
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.VIDEORESIZE and not window:
-                self.screen = pygame.display.set_mode(
-                    event.size, pygame.RESIZABLE
-                )
+                if os.environ.get("SDL_VIDEODRIVER") == "wayland":
+                    self.screen = pygame.display.get_surface()
+                else:
+                    self.screen = pygame.display.set_mode(
+                        event.size, pygame.RESIZABLE
+                    )
 
             if self.state == GameState.MAIN_MENU:
                 self._handle_main_menu_events(event)
@@ -529,7 +535,23 @@ class PygameRunner:
 
         pygame.display.flip()
 
-    async def run(self) -> None:
+    def run(self) -> None:
+        target_frame_ms = 1000.0 / self.config.fps
+        while self.running:
+            dt_ms = target_frame_ms
+            if not self.config.headless:
+                self.handle_events()
+                dt_ms = float(self.clock.tick(self.config.fps))
+
+            self.update(dt_ms)
+
+            if not self.config.headless:
+                self.draw()
+
+        if not self.config.headless:
+            pygame.quit()
+
+    async def run_async(self) -> None:
         import asyncio
 
         target_frame_ms = 1000.0 / self.config.fps
