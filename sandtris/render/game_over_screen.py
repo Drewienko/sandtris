@@ -30,26 +30,26 @@ class GameOverScreen:
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        modal = pygame.Rect(0, 0, modal_width, 390)
+        modal = pygame.Rect(0, 0, modal_width, 430)
         modal.center = surface_rect.center
 
         return {
             "modal": modal,
             "restart": pygame.Rect(
                 modal.left + margin,
-                modal.top + 210,
+                modal.top + 250,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "save": pygame.Rect(
                 modal.left + margin,
-                modal.top + 210 + step,
+                modal.top + 250 + step,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "menu": pygame.Rect(
                 modal.left + margin,
-                modal.top + 210 + step * 2,
+                modal.top + 250 + step * 2,
                 modal.width - margin * 2,
                 btn_h,
             ),
@@ -77,6 +77,7 @@ class GameOverScreen:
         level: int,
         max_combo: int,
         status_message: str,
+        player_name: str,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
     ) -> None:
@@ -123,11 +124,25 @@ class GameOverScreen:
         )
         surface.blit(combo_text, combo_rect)
 
+        name_label = self.body_font.render("Name:", True, self.theme.body_text)
+        name_value = self.body_font.render(
+            f"{player_name}_", True, self.theme.title_text
+        )
+        name_y = modal.top + 156
+        surface.blit(
+            name_label,
+            name_label.get_rect(left=modal.left + 20, top=name_y),
+        )
+        surface.blit(
+            name_value,
+            name_value.get_rect(right=modal.right - 20, top=name_y),
+        )
+
         status_text = self.body_font.render(
             status_message, True, self.theme.body_text
         )
         status_rect = status_text.get_rect(
-            center=(modal.centerx, modal.top + 174)
+            center=(modal.centerx, modal.top + 192)
         )
         surface.blit(status_text, status_rect)
 

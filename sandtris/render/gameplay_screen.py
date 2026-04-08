@@ -17,6 +17,7 @@ class ScreenLayout:
     board_rect: pygame.Rect
     side_rect: pygame.Rect
     next_rect: pygame.Rect
+    help_rect: pygame.Rect
     pause_rect: pygame.Rect
 
 
@@ -33,6 +34,7 @@ class GameplayScreen:
         self.theme = theme or ThemeColors()
         self.dims = dims or UIDimensions()
         self.pause_button = PixelButton("PAUSE")
+        self.help_button = PixelButton("?")
 
     def get_layout(self, surface_rect: pygame.Rect) -> ScreenLayout:
         m = self.dims.margin
@@ -65,12 +67,19 @@ class GameplayScreen:
             side_rect.width - m * 2,
             self.dims.button_height,
         )
+        help_rect = pygame.Rect(
+            side_rect.left + m,
+            pause_rect.top - self.dims.button_height - m,
+            side_rect.width - m * 2,
+            self.dims.button_height,
+        )
 
         return ScreenLayout(
             hud_rect=hud_rect,
             board_rect=board_rect,
             side_rect=side_rect,
             next_rect=next_rect,
+            help_rect=help_rect,
             pause_rect=pause_rect,
         )
 
@@ -78,6 +87,11 @@ class GameplayScreen:
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
         return self.get_layout(surface_rect).pause_rect.collidepoint(pos)
+
+    def help_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        return self.get_layout(surface_rect).help_rect.collidepoint(pos)
 
     def _draw_next_preview(
         self,
@@ -236,6 +250,16 @@ class GameplayScreen:
             next_color_id,
             scale,
             color_palette,
+        )
+
+        hov_help = layout.help_rect.collidepoint(mouse_pos)
+        self.help_button.draw(
+            surface,
+            layout.help_rect,
+            self.body_font,
+            self.theme,
+            hov_help,
+            hov_help and mouse_down,
         )
 
         hovered = layout.pause_rect.collidepoint(mouse_pos)

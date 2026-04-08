@@ -22,16 +22,33 @@ class MainMenuScreen:
         self.dims = dims or UIDimensions()
         self.play_button = PixelButton("PLAY")
         self.settings_button = PixelButton("SETTINGS")
+        self.scores_button = PixelButton("HIGH SCORES")
         self.help_button = PixelButton("HOW TO PLAY")
         self.quit_button = PixelButton("QUIT")
+        self.yes_button = PixelButton("YES")
+        self.no_button = PixelButton("NO")
+        self.confirming_quit = False
 
     def get_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
-        menu_width = 320
         btn_h = self.dims.modal_button_height
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        panel = pygame.Rect(0, 0, menu_width, 360)
+        if self.confirming_quit:
+            panel = pygame.Rect(0, 0, 320, 200)
+            panel.center = surface_rect.center
+            half = (panel.width - margin * 2 - 20) // 2
+            return {
+                "panel": panel,
+                "yes": pygame.Rect(
+                    panel.left + margin, panel.top + 100, half, btn_h
+                ),
+                "no": pygame.Rect(
+                    panel.right - margin - half, panel.top + 100, half, btn_h
+                ),
+            }
+
+        panel = pygame.Rect(0, 0, 320, 420)
         panel.center = surface_rect.center
 
         return {
@@ -48,15 +65,21 @@ class MainMenuScreen:
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "help": pygame.Rect(
+            "scores": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step * 2,
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "quit": pygame.Rect(
+            "help": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step * 3,
+                panel.width - margin * 2,
+                btn_h,
+            ),
+            "quit": pygame.Rect(
+                panel.left + margin,
+                panel.top + 100 + step * 4,
                 panel.width - margin * 2,
                 btn_h,
             ),
@@ -65,22 +88,51 @@ class MainMenuScreen:
     def play_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
+        if self.confirming_quit:
+            return False
         return self.get_layout(surface_rect)["play"].collidepoint(pos)
 
     def settings_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
+        if self.confirming_quit:
+            return False
         return self.get_layout(surface_rect)["settings"].collidepoint(pos)
+
+    def scores_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        if self.confirming_quit:
+            return False
+        return self.get_layout(surface_rect)["scores"].collidepoint(pos)
 
     def help_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
+        if self.confirming_quit:
+            return False
         return self.get_layout(surface_rect)["help"].collidepoint(pos)
 
     def quit_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
+        if self.confirming_quit:
+            return False
         return self.get_layout(surface_rect)["quit"].collidepoint(pos)
+
+    def yes_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        if not self.confirming_quit:
+            return False
+        return self.get_layout(surface_rect)["yes"].collidepoint(pos)
+
+    def no_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        if not self.confirming_quit:
+            return False
+        return self.get_layout(surface_rect)["no"].collidepoint(pos)
 
     def draw(
         self,
@@ -101,9 +153,31 @@ class MainMenuScreen:
             self.theme.panel_border_bright,
         )
 
-        title = self.title_font.render("SANDTRIS", True, self.theme.title_text)
+        title_str = "QUIT?" if self.confirming_quit else "SANDTRIS"
+        title = self.title_font.render(title_str, True, self.theme.title_text)
         title_rect = title.get_rect(center=(panel.centerx, panel.top + 46))
         surface.blit(title, title_rect)
+
+        if self.confirming_quit:
+            hov_yes = layout["yes"].collidepoint(mouse_pos)
+            self.yes_button.draw(
+                surface,
+                layout["yes"],
+                self.body_font,
+                self.theme,
+                hov_yes,
+                hov_yes and mouse_down,
+            )
+            hov_no = layout["no"].collidepoint(mouse_pos)
+            self.no_button.draw(
+                surface,
+                layout["no"],
+                self.body_font,
+                self.theme,
+                hov_no,
+                hov_no and mouse_down,
+            )
+            return
 
         hov_play = layout["play"].collidepoint(mouse_pos)
         self.play_button.draw(
@@ -123,6 +197,16 @@ class MainMenuScreen:
             self.theme,
             hov_settings,
             hov_settings and mouse_down,
+        )
+
+        hov_scores = layout["scores"].collidepoint(mouse_pos)
+        self.scores_button.draw(
+            surface,
+            layout["scores"],
+            self.body_font,
+            self.theme,
+            hov_scores,
+            hov_scores and mouse_down,
         )
 
         hov_help = layout["help"].collidepoint(mouse_pos)

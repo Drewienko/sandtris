@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 import pygame
 import numpy as np
 from pathlib import Path
@@ -14,6 +15,7 @@ from sandtris.render.game_over_screen import GameOverScreen
 from sandtris.render.settings_screen import SettingsScreen
 from sandtris.render.main_menu_screen import MainMenuScreen
 from sandtris.render.how_to_play_screen import HowToPlayScreen
+from sandtris.render.high_scores_screen import HighScoresScreen
 from sandtris.render.ui import (
     SAND_PALETTE_PRESETS,
     THEME_PRESETS,
@@ -67,6 +69,7 @@ class GameState(Enum):
     PLAYING = auto()
     SETTINGS = auto()
     HOW_TO_PLAY = auto()
+    HIGH_SCORES = auto()
 
 
 class PygameRunner:
@@ -108,6 +111,9 @@ class PygameRunner:
             SAND_PALETTE_PRESETS[self.sand_palette_name],
         )
         self.game_over_status = "Save your score"
+        self.player_name = "PLAYER"
+        self.game_start_time = time.time()
+        self._cached_high_score: list = []
 
         if not self.config.headless:
             if not window and os.environ.get("WAYLAND_DISPLAY"):
@@ -145,6 +151,9 @@ class PygameRunner:
                 self.title_font, self.body_font
             )
             self.how_to_play_view = HowToPlayScreen(
+                self.title_font, self.body_font
+            )
+            self.high_scores_view = HighScoresScreen(
                 self.title_font, self.body_font
             )
             self._apply_theme(self.theme_name)
@@ -201,6 +210,8 @@ class PygameRunner:
                 self._handle_settings_events(event)
             elif self.state == GameState.HOW_TO_PLAY:
                 self._handle_how_to_play_events(event)
+            elif self.state == GameState.HIGH_SCORES:
+                self._handle_high_scores_events(event)
 
     def _save_settings(self) -> None:
         save_persistent_data(
@@ -212,6 +223,12 @@ class PygameRunner:
             },
         )
 
+    def _rebuild_palette_lut(self) -> None:
+        lut = np.zeros((256, 3), dtype=np.uint8)
+        for k, v in self.color_palette.items():
+            lut[k] = v
+        self._palette_lut = lut
+
     def _apply_theme(self, theme_name: str) -> None:
         self.theme_name = theme_name
         theme = THEME_PRESETS[theme_name]
@@ -220,11 +237,13 @@ class PygameRunner:
         self.game_over_view.theme = theme
         self.main_menu_view.theme = theme
         self.how_to_play_view.theme = theme
+        self.high_scores_view.theme = theme
         self.settings_view.theme = theme
         self.color_palette = build_color_palette(
             theme.screen_bg,
             SAND_PALETTE_PRESETS[self.sand_palette_name],
         )
+        self._rebuild_palette_lut()
         self._save_settings()
 
     def _apply_sand_palette(self, palette_name: str) -> None:
@@ -233,31 +252,43 @@ class PygameRunner:
             THEME_PRESETS[self.theme_name].screen_bg,
             SAND_PALETTE_PRESETS[self.sand_palette_name],
         )
+        self._rebuild_palette_lut()
         self._save_settings()
 
     def _save_high_score(self) -> None:
-        current = {
+        duration_s = int(time.time() - self.game_start_time)
+        entry = {
+            "player": self.player_name,
             "score": self.engine.score,
             "level": self.engine.level,
             "max_combo": self.engine.max_combo,
+            "date": time.strftime("%Y-%m-%d"),
+            "pieces_placed": self.engine.pieces_placed,
+            "pixels_cleared": self.engine.pixels_cleared,
+            "duration_s": duration_s,
         }
         saved = load_persistent_data(
             "sandtris_highscore", self.high_score_path
         )
-
-        if current["score"] > saved.get("score", 0):
-            save_persistent_data(
-                "sandtris_highscore", self.high_score_path, current
-            )
-            self.game_over_status = "New high score saved"
-        else:
-            self.game_over_status = "Score saved, best unchanged"
+        scores = saved if isinstance(saved, list) else []
+        scores.append(entry)
+        scores.sort(key=lambda e: e.get("score", 0), reverse=True)
+        scores = scores[:5]
+        save_persistent_data(
+            "sandtris_highscore", self.high_score_path, scores
+        )
+        self._cached_high_score = scores
+        best_is_new = scores[0]["score"] == entry["score"]
+        self.game_over_status = (
+            "New high score!" if best_is_new else "Score saved"
+        )
 
     def _open_settings(self) -> None:
         self.previous_state = self.state
         self.state = GameState.SETTINGS
 
     def _restart_game(self) -> None:
+        self.main_menu_view.confirming_quit = False
         self.engine = SandtrisEngine(self.config)
         self.paused = False
         self.fast_dropping = False
@@ -267,6 +298,8 @@ class PygameRunner:
         self.pause_view.confirming_restart = False
         self.pause_view.confirming_menu = False
         self.game_over_status = "Save your score"
+        self.player_name = "PLAYER"
+        self.game_start_time = time.time()
 
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -298,6 +331,20 @@ class PygameRunner:
             if self.how_to_play_view.back_button_contains(
                 screen_rect, event.pos
             ):
+                self.state = self.previous_state
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.mouse_down = False
+
+        if event.type == pygame.KEYDOWN and event.key in self.config.key_pause:
+            self.state = self.previous_state
+
+    def _handle_high_scores_events(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.mouse_down = True
+            if self.high_scores_view.back_button_contains(
+                self.screen.get_rect(), event.pos
+            ):
                 self.state = GameState.MAIN_MENU
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
@@ -310,7 +357,13 @@ class PygameRunner:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
             screen_rect = self.screen.get_rect()
-            if self.main_menu_view.play_button_contains(
+            if self.main_menu_view.yes_button_contains(screen_rect, event.pos):
+                self.running = False
+            elif self.main_menu_view.no_button_contains(
+                screen_rect, event.pos
+            ):
+                self.main_menu_view.confirming_quit = False
+            elif self.main_menu_view.play_button_contains(
                 screen_rect, event.pos
             ):
                 self._restart_game()
@@ -319,14 +372,23 @@ class PygameRunner:
                 screen_rect, event.pos
             ):
                 self._open_settings()
+            elif self.main_menu_view.scores_button_contains(
+                screen_rect, event.pos
+            ):
+                loaded = load_persistent_data(
+                    "sandtris_highscore", self.high_score_path
+                )
+                self._cached_high_score = loaded if isinstance(loaded, list) else []
+                self.state = GameState.HIGH_SCORES
             elif self.main_menu_view.help_button_contains(
                 screen_rect, event.pos
             ):
+                self.previous_state = GameState.MAIN_MENU
                 self.state = GameState.HOW_TO_PLAY
             elif self.main_menu_view.quit_button_contains(
                 screen_rect, event.pos
             ):
-                self.running = False
+                self.main_menu_view.confirming_quit = True
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
@@ -393,6 +455,13 @@ class PygameRunner:
                 ):
                     self.paused = True
                     return
+                if self.screen_view.help_button_contains(
+                    screen_rect, event.pos
+                ):
+                    self.paused = True
+                    self.previous_state = GameState.PLAYING
+                    self.state = GameState.HOW_TO_PLAY
+                    return
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
@@ -406,7 +475,17 @@ class PygameRunner:
                         self.pause_view.confirming_menu = False
                 return
 
-            if self.paused or self.engine.game_over:
+            if self.engine.game_over:
+                if event.key == pygame.K_BACKSPACE:
+                    self.player_name = self.player_name[:-1]
+                elif (
+                    event.unicode.isprintable()
+                    and len(self.player_name) < 12
+                ):
+                    self.player_name += event.unicode.upper()
+                return
+
+            if self.paused:
                 return
 
             if self.fast_dropping:
@@ -443,8 +522,11 @@ class PygameRunner:
                         self.fast_dropping = False
                         self.current_fall_delay = self.config.fall_delay
 
-        self.sand_step_accumulator_ms += dt_ms
         sand_step_interval_ms = self._sand_step_interval_ms()
+        self.sand_step_accumulator_ms = min(
+            self.sand_step_accumulator_ms + dt_ms,
+            sand_step_interval_ms * 2,
+        )
         while self.sand_step_accumulator_ms >= sand_step_interval_ms:
             self.sand_step_accumulator_ms -= sand_step_interval_ms
             self.engine.tick(sand_step_interval_ms)
@@ -470,6 +552,15 @@ class PygameRunner:
             )
             pygame.display.flip()
             return
+        elif self.state == GameState.HIGH_SCORES:
+            self.high_scores_view.draw(
+                self.screen,
+                self._cached_high_score,
+                pygame.mouse.get_pos(),
+                self.mouse_down,
+            )
+            pygame.display.flip()
+            return
         elif self.state == GameState.SETTINGS:
             self.settings_view.draw(
                 self.screen,
@@ -481,16 +572,8 @@ class PygameRunner:
             pygame.display.flip()
             return
 
-        color_data = np.zeros(
-            (self.config.width, self.config.height, 3), dtype=np.uint8
-        )
-        color_data[:, :] = self.color_palette[0]
-
-        for y in range(self.config.height):
-            for x in range(self.config.width):
-                val = self.engine.grid.data[y, x]
-                if val > 0:
-                    color_data[x, y] = self.color_palette[val]
+        # grid.data is (height, width); surfarray expects (width, height, 3)
+        color_data = self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
 
         if self.engine.active_piece:
             for bx, by, color in self.engine.active_piece.get_cells():
@@ -498,7 +581,7 @@ class PygameRunner:
                     0 <= bx < self.config.width
                     and 0 <= by < self.config.height
                 ):
-                    color_data[bx, by] = self.color_palette[color]
+                    color_data[bx, by] = self._palette_lut[color]
 
         surf = pygame.surfarray.make_surface(color_data)
         self.screen_view.draw(
@@ -523,6 +606,7 @@ class PygameRunner:
                 self.engine.level,
                 self.engine.max_combo,
                 self.game_over_status,
+                self.player_name,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
             )

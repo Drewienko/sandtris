@@ -132,6 +132,7 @@ def draw_panel(
     border_color: tuple[int, int, int],
     trim_color: tuple[int, int, int],
     dims: UIDimensions = UIDimensions(),
+    exterior_corners: bool = False,
 ) -> None:
     pygame.draw.rect(surface, fill_color, rect)
     pygame.draw.rect(surface, border_color, rect, dims.panel_border)
@@ -141,6 +142,9 @@ def draw_panel(
     )
     if trim.width > 0 and trim.height > 0:
         pygame.draw.rect(surface, trim_color, trim, dims.panel_trim_width)
+
+    if not exterior_corners:
+        return
 
     step = dims.panel_corner_step
     inset = dims.margin

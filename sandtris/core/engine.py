@@ -22,6 +22,8 @@ class SandtrisEngine:
         self.combo_timer_ms = 0.0
         self.max_combo = 1
         self.level = 1
+        self.pieces_placed = 0
+        self.pixels_cleared = 0
         self.spawn_piece()
 
     def _roll_next_piece(self) -> None:
@@ -112,6 +114,7 @@ class SandtrisEngine:
         for x, y, color in self.active_piece.get_cells():
             self.grid.add_sand(x, y, color)
 
+        self.pieces_placed += 1
         self.active_piece = None
         self.spawn_piece()
 
@@ -131,6 +134,7 @@ class SandtrisEngine:
 
         cleared_pixels = self.grid.check_line_clears()
         if cleared_pixels > 0:
+            self.pixels_cleared += cleared_pixels
             self.score += cleared_pixels * self.combo
             self.combo = min(10, self.combo + 1)
             self.max_combo = max(self.max_combo, self.combo)

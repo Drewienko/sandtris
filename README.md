@@ -9,6 +9,8 @@ Sandtris clone built with pygame.
 - **Local Version:** Play locally using pygame.
 - **AI Version:** (Planned) Headless environment and API for AI agents to play the game.
 
+> **Known issue:** Browser performance needs improvement. The sand simulation runs in Python and is not yet optimized for WebAssembly. The desktop version is unaffected.
+
 ## Controls
 *   **Move Left / Right:** `Left Arrow` / `A` / `D`
 *   **Rotate:** `Up Arrow` / `W`

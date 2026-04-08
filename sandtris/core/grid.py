@@ -1,5 +1,4 @@
 from collections import deque
-import random
 
 import numpy as np
 
@@ -23,33 +22,37 @@ class Grid:
 
     def update_sand(self) -> None:
         for y in range(self.height - 2, -1, -1):
-            xs = list(range(self.width))
-            random.shuffle(xs)
+            row = self.data[y]
+            if not row.any():
+                continue
 
-            for x in xs:
-                color = self.data[y, x]
-                if color != 0:
-                    if self.data[y + 1, x] == 0:
-                        self.data[y, x] = 0
-                        self.data[y + 1, x] = color
-                    else:
-                        dir1 = random.choice([-1, 1])
-                        dir2 = -dir1
+            below = self.data[y + 1]
+            xs = np.random.permutation(self.width)
+            dirs = np.random.randint(0, 2, self.width) * 2 - 1
 
-                        if (
-                            0 <= x + dir1 < self.width
-                            and self.data[y + 1, x + dir1] == 0
-                        ):
-                            self.data[y, x] = 0
-                            self.data[y + 1, x + dir1] = color
-                        elif (
-                            0 <= x + dir2 < self.width
-                            and self.data[y + 1, x + dir2] == 0
-                        ):
-                            self.data[y, x] = 0
-                            self.data[y + 1, x + dir2] = color
+            for i in range(self.width):
+                x = xs[i]
+                color = row[x]
+                if color == 0:
+                    continue
+                if below[x] == 0:
+                    below[x] = color
+                    row[x] = 0
+                else:
+                    d = dirs[i]
+                    nx1 = x + d
+                    nx2 = x - d
+                    if 0 <= nx1 < self.width and below[nx1] == 0:
+                        below[nx1] = color
+                        row[x] = 0
+                    elif 0 <= nx2 < self.width and below[nx2] == 0:
+                        below[nx2] = color
+                        row[x] = 0
 
     def check_line_clears(self) -> int:
+        if not self.data[:, 0].any():
+            return 0
+
         to_clear = set()
         visited = set()
 

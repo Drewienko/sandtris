@@ -5,7 +5,6 @@ from sandtris.render.ui import (
     PixelButton,
     ThemeColors,
     UIDimensions,
-    draw_keycap,
     draw_panel,
 )
 
@@ -81,66 +80,56 @@ class HowToPlayScreen:
             "Clear sand by connecting a",
             "continuous path of the same color",
             "from the left wall to the right wall.",
-            "",
-            "CONTROLS:",
         ]
 
-        controls = [
-            (
-                [pygame.key.name(k).upper() for k in config.key_left]
-                + [pygame.key.name(k).upper() for k in config.key_right],
-                "Move Left / Right",
-            ),
-            ([pygame.key.name(k).upper() for k in config.key_up], "Rotate"),
-            (
-                [pygame.key.name(k).upper() for k in config.key_down]
-                + [pygame.key.name(k).upper() for k in config.key_drop],
-                "Fast Drop",
-            ),
-            ([pygame.key.name(k).upper() for k in config.key_pause], "Pause"),
-        ]
-
-        y_offset = panel.top + 100
+        line_h = self.body_font.get_linesize()
+        y = panel.top + 100
         for line in instructions:
             text = self.body_font.render(line, True, self.theme.body_text)
-            text_rect = text.get_rect(centerx=panel.centerx, top=y_offset)
-            surface.blit(text, text_rect)
-            y_offset += 30
+            surface.blit(text, text.get_rect(centerx=panel.centerx, top=y))
+            y += line_h
 
-        y_offset += 10
+        y += line_h
+        controls_label = self.body_font.render(
+            "CONTROLS:", True, self.theme.title_text
+        )
+        surface.blit(
+            controls_label,
+            controls_label.get_rect(centerx=panel.centerx, top=y),
+        )
+        y += line_h + line_h // 2
+
+        controls = [
+            (config.key_left, "Move Left"),
+            (config.key_right, "Move Right"),
+            (config.key_up, "Rotate"),
+            (
+                config.key_down + config.key_drop,
+                "Fast Drop",
+            ),
+            (config.key_pause, "Pause"),
+        ]
+
+        margin = self.dims.modal_button_margin
         for keys, action in controls:
-            action_text = self.body_font.render(
+            keys_str = " / ".join(
+                pygame.key.name(k).upper() for k in keys
+            )
+            keys_surf = self.body_font.render(
+                keys_str, True, self.theme.title_text
+            )
+            action_surf = self.body_font.render(
                 action, True, self.theme.body_text
             )
-            action_rect = action_text.get_rect(
-                left=panel.centerx + 20, top=y_offset
+            surface.blit(
+                keys_surf,
+                keys_surf.get_rect(left=panel.left + margin, top=y),
             )
-
-            right_edge = panel.centerx - 20
-            key_rects = []
-            for label in reversed(keys):
-                text = self.body_font.render(label, True, self.theme.body_text)
-                key_width = text.get_width() + self.dims.keycap_padding_x * 2
-                key_rect = draw_keycap(
-                    surface,
-                    label,
-                    (right_edge - key_width // 2, y_offset + 10),
-                    self.body_font,
-                    self.theme,
-                    self.dims,
-                )
-                key_rects.append(key_rect)
-                right_edge = key_rect.left - 8
-
-            if len(keys) > 1:
-                slash = self.body_font.render("/", True, self.theme.body_text)
-                slash_rect = slash.get_rect(
-                    center=(key_rects[0].left + 4, y_offset + 10)
-                )
-                surface.blit(slash, slash_rect)
-
-            surface.blit(action_text, action_rect)
-            y_offset += 40
+            surface.blit(
+                action_surf,
+                action_surf.get_rect(right=panel.right - margin, top=y),
+            )
+            y += line_h + line_h // 4
 
         hov_back = layout["back"].collidepoint(mouse_pos)
         self.back_button.draw(

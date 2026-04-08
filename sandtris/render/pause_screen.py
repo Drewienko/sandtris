@@ -155,7 +155,7 @@ class PauseScreen:
         if self.confirming_restart:
             title_str = "RESTART?"
         elif self.confirming_menu:
-            title_str = "QUIT?"
+            title_str = "TO MENU?"
 
         title = self.title_font.render(title_str, True, self.theme.body_text)
         title_rect = title.get_rect(center=(modal.centerx, modal.top + 46))
