@@ -24,6 +24,8 @@ class SandtrisEngine:
         self.level = 1
         self.pieces_placed = 0
         self.pixels_cleared = 0
+        self.flash_cells: list[tuple[int, int]] = []
+        self.flash_timer_ms: float = 0.0
         self.spawn_piece()
 
     def _roll_next_piece(self) -> None:
@@ -127,6 +129,11 @@ class SandtrisEngine:
 
         self.grid.update_sand()
 
+        if self.flash_timer_ms > 0:
+            self.flash_timer_ms = max(0.0, self.flash_timer_ms - dt_ms)
+            if self.flash_timer_ms == 0.0:
+                self.flash_cells = []
+
         if self.combo_timer_ms > 0:
             self.combo_timer_ms = max(0.0, self.combo_timer_ms - dt_ms)
             if self.combo_timer_ms == 0.0:
@@ -140,3 +147,5 @@ class SandtrisEngine:
             self.max_combo = max(self.max_combo, self.combo)
             self.level = (self.score // 2000) + 1
             self.combo_timer_ms = 3000.0
+            self.flash_cells = self.grid.last_cleared
+            self.flash_timer_ms = 280.0

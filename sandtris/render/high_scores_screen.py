@@ -24,7 +24,7 @@ class HighScoresScreen:
 
     def get_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
         w = min(560, surface_rect.width - 40)
-        h = min(620, surface_rect.height - 40)
+        h = min(820, surface_rect.height - 40)
         panel = pygame.Rect(0, 0, w, h)
         panel.center = surface_rect.center
         margin = self.dims.modal_button_margin
@@ -111,7 +111,7 @@ class HighScoresScreen:
 
             y = sep_y + line_h // 2
 
-            for rank, entry in enumerate(high_scores[:5], start=1):
+            for rank, entry in enumerate(high_scores[:10], start=1):
                 color = (
                     self.theme.accent_text if rank == 1 else self.theme.title_text
                 )

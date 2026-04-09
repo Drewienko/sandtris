@@ -18,6 +18,7 @@ class ScreenLayout:
     side_rect: pygame.Rect
     next_rect: pygame.Rect
     help_rect: pygame.Rect
+    skull_rect: pygame.Rect
     pause_rect: pygame.Rect
 
 
@@ -35,6 +36,7 @@ class GameplayScreen:
         self.dims = dims or UIDimensions()
         self.pause_button = PixelButton("PAUSE")
         self.help_button = PixelButton("?")
+        self.skull_button = PixelButton("GIVE UP")
 
     def get_layout(self, surface_rect: pygame.Rect) -> ScreenLayout:
         m = self.dims.margin
@@ -67,9 +69,15 @@ class GameplayScreen:
             side_rect.width - m * 2,
             self.dims.button_height,
         )
+        skull_rect = pygame.Rect(
+            side_rect.left + m,
+            pause_rect.top - self.dims.button_height - g,
+            side_rect.width - m * 2,
+            self.dims.button_height,
+        )
         help_rect = pygame.Rect(
             side_rect.left + m,
-            pause_rect.top - self.dims.button_height - m,
+            skull_rect.top - self.dims.button_height - g,
             side_rect.width - m * 2,
             self.dims.button_height,
         )
@@ -80,6 +88,7 @@ class GameplayScreen:
             side_rect=side_rect,
             next_rect=next_rect,
             help_rect=help_rect,
+            skull_rect=skull_rect,
             pause_rect=pause_rect,
         )
 
@@ -92,6 +101,11 @@ class GameplayScreen:
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
         return self.get_layout(surface_rect).help_rect.collidepoint(pos)
+
+    def skull_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        return self.get_layout(surface_rect).skull_rect.collidepoint(pos)
 
     def _draw_next_preview(
         self,
@@ -150,6 +164,7 @@ class GameplayScreen:
         next_color_id: int | None,
         scale: int,
         color_palette: dict[int, tuple[int, int, int]],
+        combo_timer_ms: float,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
     ) -> None:
@@ -231,6 +246,26 @@ class GameplayScreen:
         surface.blit(combo_text, combo_rect)
         surface.blit(fps_text, fps_rect)
 
+        if combo_timer_ms > 0:
+            bar_h = 4
+            bar_y = layout.hud_rect.bottom - bar_h - 4
+            bar_max_w = layout.hud_rect.width - 48
+            bar_x = layout.hud_rect.left + 24
+            fill_w = int(bar_max_w * (combo_timer_ms / 3000.0))
+            pygame.draw.rect(
+                surface,
+                self.theme.panel_border,
+                (bar_x, bar_y, bar_max_w, bar_h),
+                border_radius=2,
+            )
+            if fill_w > 0:
+                pygame.draw.rect(
+                    surface,
+                    self.theme.accent_panel,
+                    (bar_x, bar_y, fill_w, bar_h),
+                    border_radius=2,
+                )
+
         draw_panel(
             surface,
             layout.next_rect,
@@ -260,6 +295,16 @@ class GameplayScreen:
             self.theme,
             hov_help,
             hov_help and mouse_down,
+        )
+
+        hov_skull = layout.skull_rect.collidepoint(mouse_pos)
+        self.skull_button.draw(
+            surface,
+            layout.skull_rect,
+            self.body_font,
+            self.theme,
+            hov_skull,
+            hov_skull and mouse_down,
         )
 
         hovered = layout.pause_rect.collidepoint(mouse_pos)

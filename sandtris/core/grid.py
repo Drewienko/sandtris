@@ -8,6 +8,7 @@ class Grid:
         self.width = width
         self.height = height
         self.data = np.zeros((height, width), dtype=np.uint8)
+        self.last_cleared: list[tuple[int, int]] = []
 
     def is_occupied(self, x: int, y: int) -> bool:
         if x < 0 or x >= self.width or y >= self.height:
@@ -91,6 +92,7 @@ class Grid:
                 if reaches_right:
                     to_clear.update(component)
 
+        self.last_cleared = list(to_clear)
         for nx, ny in to_clear:
             self.data[ny, nx] = 0
 

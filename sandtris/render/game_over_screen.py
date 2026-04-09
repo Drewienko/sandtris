@@ -30,26 +30,26 @@ class GameOverScreen:
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        modal = pygame.Rect(0, 0, modal_width, 430)
+        modal = pygame.Rect(0, 0, modal_width, 410)
         modal.center = surface_rect.center
 
         return {
             "modal": modal,
             "restart": pygame.Rect(
                 modal.left + margin,
-                modal.top + 250,
+                modal.top + 218,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "save": pygame.Rect(
                 modal.left + margin,
-                modal.top + 250 + step,
+                modal.top + 218 + step,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "menu": pygame.Rect(
                 modal.left + margin,
-                modal.top + 250 + step * 2,
+                modal.top + 218 + step * 2,
                 modal.width - margin * 2,
                 btn_h,
             ),
@@ -124,25 +124,46 @@ class GameOverScreen:
         )
         surface.blit(combo_text, combo_rect)
 
-        name_label = self.body_font.render("Name:", True, self.theme.body_text)
-        name_value = self.body_font.render(
-            f"{player_name}_", True, self.theme.title_text
+        name_row_y = modal.top + 156
+        name_field_rect = pygame.Rect(
+            modal.left + 20 + modal.width // 3,
+            name_row_y,
+            modal.width - 20 - modal.width // 3 - 20,
+            32,
         )
-        name_y = modal.top + 156
+        name_label = self.body_font.render("NAME:", True, self.theme.body_text)
         surface.blit(
             name_label,
-            name_label.get_rect(left=modal.left + 20, top=name_y),
+            name_label.get_rect(
+                left=modal.left + 20, centery=name_field_rect.centery
+            ),
+        )
+        pygame.draw.rect(
+            surface, self.theme.panel_bg_alt, name_field_rect, border_radius=3
+        )
+        pygame.draw.rect(
+            surface,
+            self.theme.panel_border_bright,
+            name_field_rect,
+            2,
+            border_radius=3,
+        )
+        name_surf = self.body_font.render(
+            f"{player_name}_", True, self.theme.title_text
         )
         surface.blit(
-            name_value,
-            name_value.get_rect(right=modal.right - 20, top=name_y),
+            name_surf,
+            name_surf.get_rect(
+                left=name_field_rect.left + 8,
+                centery=name_field_rect.centery,
+            ),
         )
 
         status_text = self.body_font.render(
-            status_message, True, self.theme.body_text
+            status_message, True, self.theme.panel_border_bright
         )
         status_rect = status_text.get_rect(
-            center=(modal.centerx, modal.top + 192)
+            center=(modal.centerx, modal.top + 202)
         )
         surface.blit(status_text, status_rect)
 

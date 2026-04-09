@@ -111,7 +111,7 @@ class PygameRunner:
             SAND_PALETTE_PRESETS[self.sand_palette_name],
         )
         self.game_over_status = "Save your score"
-        self.player_name = "PLAYER"
+        self.player_name = settings_data.get("player_name", "PLAYER")
         self.game_start_time = time.time()
         self._cached_high_score: list = []
 
@@ -220,6 +220,7 @@ class PygameRunner:
             {
                 "theme_name": self.theme_name,
                 "sand_palette_name": self.sand_palette_name,
+                "player_name": self.player_name,
             },
         )
 
@@ -273,7 +274,7 @@ class PygameRunner:
         scores = saved if isinstance(saved, list) else []
         scores.append(entry)
         scores.sort(key=lambda e: e.get("score", 0), reverse=True)
-        scores = scores[:5]
+        scores = scores[:10]
         save_persistent_data(
             "sandtris_highscore", self.high_score_path, scores
         )
@@ -298,13 +299,16 @@ class PygameRunner:
         self.pause_view.confirming_restart = False
         self.pause_view.confirming_menu = False
         self.game_over_status = "Save your score"
-        self.player_name = "PLAYER"
         self.game_start_time = time.time()
 
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
             screen_rect = self.screen.get_rect()
+            if self.settings_view.name_field_contains(screen_rect, event.pos):
+                self.settings_view.name_field_active = True
+                return
+            self.settings_view.name_field_active = False
             theme_name = self.settings_view.theme_at(screen_rect, event.pos)
             if theme_name is not None:
                 self._apply_theme(theme_name)
@@ -316,13 +320,26 @@ class PygameRunner:
                 self._apply_sand_palette(sand_name)
                 return
             if self.settings_view.back_button_contains(screen_rect, event.pos):
+                self.settings_view.name_field_active = False
+                self._save_settings()
                 self.state = self.previous_state
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
 
-        if event.type == pygame.KEYDOWN and event.key in self.config.key_pause:
-            self.state = self.previous_state
+        if event.type == pygame.KEYDOWN:
+            if self.settings_view.name_field_active:
+                if event.key == pygame.K_BACKSPACE:
+                    self.player_name = self.player_name[:-1]
+                elif event.key in (pygame.K_RETURN, pygame.K_ESCAPE):
+                    self.settings_view.name_field_active = False
+                    self._save_settings()
+                elif event.unicode.isprintable() and len(self.player_name) < 12:
+                    self.player_name += event.unicode.upper()
+                return
+            if event.key in self.config.key_pause:
+                self._save_settings()
+                self.state = self.previous_state
 
     def _handle_how_to_play_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -462,6 +479,11 @@ class PygameRunner:
                     self.previous_state = GameState.PLAYING
                     self.state = GameState.HOW_TO_PLAY
                     return
+                if self.screen_view.skull_button_contains(
+                    screen_rect, event.pos
+                ):
+                    self.engine.game_over = True
+                    return
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
@@ -566,6 +588,7 @@ class PygameRunner:
                 self.screen,
                 self.theme_name,
                 self.sand_palette_name,
+                self.player_name,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
             )
@@ -575,13 +598,28 @@ class PygameRunner:
         # grid.data is (height, width); surfarray expects (width, height, 3)
         color_data = self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
 
-        if self.engine.active_piece:
+        if self.engine.active_piece and not self.engine.game_over:
             for bx, by, color in self.engine.active_piece.get_cells():
                 if (
                     0 <= bx < self.config.width
                     and 0 <= by < self.config.height
                 ):
                     color_data[bx, by] = self._palette_lut[color]
+
+        if self.engine.flash_timer_ms > 0 and self.engine.flash_cells:
+            alpha = self.engine.flash_timer_ms / 280.0
+            flash_rgb = np.array([255, 240, 160], dtype=np.float32)
+            cells = np.array(self.engine.flash_cells)
+            xs, ys = cells[:, 0], cells[:, 1]
+            valid = (
+                (xs >= 0) & (xs < self.config.width) &
+                (ys >= 0) & (ys < self.config.height)
+            )
+            xs, ys = xs[valid], ys[valid]
+            orig = color_data[xs, ys].astype(np.float32)
+            color_data[xs, ys] = (
+                orig * (1.0 - alpha) + flash_rgb * alpha
+            ).astype(np.uint8)
 
         surf = pygame.surfarray.make_surface(color_data)
         self.screen_view.draw(
@@ -595,6 +633,7 @@ class PygameRunner:
             self.engine.next_color_id,
             self.config.scale,
             self.color_palette,
+            self.engine.combo_timer_ms,
             pygame.mouse.get_pos(),
             self.mouse_down,
         )
