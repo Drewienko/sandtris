@@ -1,1 +1,102 @@
-[]
+[
+  {
+    "player": "ALEXEY",
+    "score": 99999,
+    "level": 99,
+    "max_combo": 10,
+    "date": "1984-06-06",
+    "pieces_placed": 999,
+    "pixels_cleared": 9999,
+    "duration_s": 600
+  },
+  {
+    "player": "CONWAY",
+    "score": 42000,
+    "level": 21,
+    "max_combo": 9,
+    "date": "1970-10-21",
+    "pieces_placed": 280,
+    "pixels_cleared": 4200,
+    "duration_s": 480
+  },
+  {
+    "player": "THOMAS",
+    "score": 29517,
+    "level": 15,
+    "max_combo": 9,
+    "date": "2026-04-09",
+    "pieces_placed": 53,
+    "pixels_cleared": 8422,
+    "duration_s": 48
+  },
+  {
+    "player": "SANDY",
+    "score": 13700,
+    "level": 7,
+    "max_combo": 6,
+    "date": "2024-04-01",
+    "pieces_placed": 91,
+    "pixels_cleared": 1370,
+    "duration_s": 214
+  },
+  {
+    "player": "THOMAS",
+    "score": 2054,
+    "level": 2,
+    "max_combo": 3,
+    "date": "2026-04-09",
+    "pieces_placed": 36,
+    "pixels_cleared": 1155,
+    "duration_s": 33
+  },
+  {
+    "player": "THOMAS",
+    "score": 1455,
+    "level": 1,
+    "max_combo": 3,
+    "date": "2026-04-09",
+    "pieces_placed": 22,
+    "pixels_cleared": 861,
+    "duration_s": 11
+  },
+  {
+    "player": "THOMAS",
+    "score": 0,
+    "level": 1,
+    "max_combo": 1,
+    "date": "2026-04-09",
+    "pieces_placed": 13,
+    "pixels_cleared": 0,
+    "duration_s": 11
+  },
+  {
+    "player": "THOMAS",
+    "score": 0,
+    "level": 1,
+    "max_combo": 1,
+    "date": "2026-04-09",
+    "pieces_placed": 13,
+    "pixels_cleared": 0,
+    "duration_s": 13
+  },
+  {
+    "player": "THOMAS",
+    "score": 0,
+    "level": 1,
+    "max_combo": 1,
+    "date": "2026-04-09",
+    "pieces_placed": 13,
+    "pixels_cleared": 0,
+    "duration_s": 15
+  },
+  {
+    "player": "THOMAS",
+    "score": 0,
+    "level": 1,
+    "max_combo": 1,
+    "date": "2026-04-09",
+    "pieces_placed": 15,
+    "pixels_cleared": 0,
+    "duration_s": 3
+  }
+]

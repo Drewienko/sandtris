@@ -41,7 +41,7 @@ def load_persistent_data(key: str, fallback_path: Path) -> dict:
                 return json.loads(val)
         except Exception:
             pass
-    elif fallback_path.exists():
+    if fallback_path.exists():
         try:
             return json.loads(fallback_path.read_text())
         except Exception:
@@ -113,7 +113,12 @@ class PygameRunner:
         self.game_over_status = "Save your score"
         self.player_name = settings_data.get("player_name", "PLAYER")
         self.game_start_time = time.time()
-        self._cached_high_score: list = []
+        loaded_hs = load_persistent_data("sandtris_highscore", self.high_score_path)
+        self._cached_high_score: list = loaded_hs if isinstance(loaded_hs, list) else []
+        self.level_up_timer_ms: float = 0.0
+        self._prev_level: int = 1
+        self.menu_focus: int = 0
+        self._game_over_reloaded: bool = False
 
         if not self.config.headless:
             if not window and os.environ.get("WAYLAND_DISPLAY"):
@@ -256,6 +261,14 @@ class PygameRunner:
         self._rebuild_palette_lut()
         self._save_settings()
 
+    def _get_rank(self) -> int | None:
+        score = self.engine.score
+        rank = (
+            sum(1 for e in self._cached_high_score if e.get("score", 0) > score)
+            + 1
+        )
+        return rank if rank <= 10 else None
+
     def _save_high_score(self) -> None:
         duration_s = int(time.time() - self.game_start_time)
         entry = {
@@ -279,10 +292,21 @@ class PygameRunner:
             "sandtris_highscore", self.high_score_path, scores
         )
         self._cached_high_score = scores
-        best_is_new = scores[0]["score"] == entry["score"]
-        self.game_over_status = (
-            "New high score!" if best_is_new else "Score saved"
+        saved_rank = next(
+            (
+                i + 1
+                for i, e in enumerate(scores)
+                if e.get("score") == entry["score"]
+                and e.get("player") == entry["player"]
+            ),
+            None,
         )
+        if saved_rank == 1:
+            self.game_over_status = "New high score!"
+        elif saved_rank is not None:
+            self.game_over_status = f"Saved as #{saved_rank}"
+        else:
+            self.game_over_status = "Not in top 10"
 
     def _open_settings(self) -> None:
         self.previous_state = self.state
@@ -300,6 +324,10 @@ class PygameRunner:
         self.pause_view.confirming_menu = False
         self.game_over_status = "Save your score"
         self.game_start_time = time.time()
+        self.level_up_timer_ms = 0.0
+        self._prev_level = 1
+        self.menu_focus = 0
+        self._game_over_reloaded = False
 
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -414,12 +442,56 @@ class PygameRunner:
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.mouse_down = False
 
+        if event.type == pygame.KEYDOWN:
+            if self.main_menu_view.confirming_quit:
+                if event.key in (pygame.K_ESCAPE,):
+                    self.main_menu_view.confirming_quit = False
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if self.menu_focus == 0:
+                        self.running = False
+                    else:
+                        self.main_menu_view.confirming_quit = False
+                elif event.key in self.config.key_down:
+                    self.menu_focus = (self.menu_focus + 1) % 2
+                elif event.key in self.config.key_up:
+                    self.menu_focus = (self.menu_focus - 1) % 2
+                return
+            if event.key in self.config.key_down:
+                self.menu_focus = (self.menu_focus + 1) % 5
+            elif event.key in self.config.key_up:
+                self.menu_focus = (self.menu_focus - 1) % 5
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                if self.menu_focus == 0:
+                    self._restart_game()
+                    self.state = GameState.PLAYING
+                elif self.menu_focus == 1:
+                    self._open_settings()
+                elif self.menu_focus == 2:
+                    loaded = load_persistent_data(
+                        "sandtris_highscore", self.high_score_path
+                    )
+                    self._cached_high_score = (
+                        loaded if isinstance(loaded, list) else []
+                    )
+                    self.state = GameState.HIGH_SCORES
+                    self.menu_focus = 0
+                elif self.menu_focus == 3:
+                    self.previous_state = GameState.MAIN_MENU
+                    self.state = GameState.HOW_TO_PLAY
+                    self.menu_focus = 0
+                elif self.menu_focus == 4:
+                    self.main_menu_view.confirming_quit = True
+                    self.menu_focus = 1
+
     def _handle_playing_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
             screen_rect = self.screen.get_rect()
 
             if self.engine.game_over:
+                if self.game_over_view.name_field_contains(screen_rect, event.pos):
+                    self.menu_focus = -1
+                    return
                 if self.game_over_view.restart_button_contains(
                     screen_rect, event.pos
                 ):
@@ -475,6 +547,7 @@ class PygameRunner:
                     screen_rect, event.pos
                 ):
                     self.paused = True
+                    self.menu_focus = 0
                     return
                 if self.screen_view.help_button_contains(
                     screen_rect, event.pos
@@ -502,15 +575,67 @@ class PygameRunner:
                 return
 
             if self.engine.game_over:
-                if event.key == pygame.K_BACKSPACE:
-                    self.player_name = self.player_name[:-1]
-                elif (
-                    event.unicode.isprintable() and len(self.player_name) < 12
-                ):
-                    self.player_name += event.unicode.upper()
+                if event.key in (pygame.K_DOWN,):
+                    if self.menu_focus == -1:
+                        self.menu_focus = 0
+                    else:
+                        self.menu_focus = (self.menu_focus + 1) % 3
+                elif event.key in (pygame.K_UP,):
+                    if self.menu_focus == 0:
+                        self.menu_focus = -1
+                    elif self.menu_focus > 0:
+                        self.menu_focus -= 1
+                elif event.key in (pygame.K_RETURN,):
+                    if self.menu_focus == 0:
+                        self._restart_game()
+                    elif self.menu_focus == 1:
+                        self._save_high_score()
+                    elif self.menu_focus == 2:
+                        self.state = GameState.MAIN_MENU
+                        self.paused = False
+                        self.menu_focus = 0
+                elif self.menu_focus == -1:
+                    if event.key == pygame.K_BACKSPACE:
+                        self.player_name = self.player_name[:-1]
+                    elif event.unicode.isprintable() and len(self.player_name) < 12:
+                        self.player_name += event.unicode.upper()
                 return
 
             if self.paused:
+                confirming = (
+                    self.pause_view.confirming_restart
+                    or self.pause_view.confirming_menu
+                )
+                n = 2 if confirming else 4
+                if event.key in self.config.key_down:
+                    self.menu_focus = (self.menu_focus + 1) % n
+                elif event.key in self.config.key_up:
+                    self.menu_focus = (self.menu_focus - 1) % n
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if confirming:
+                        if self.menu_focus == 0:
+                            if self.pause_view.confirming_restart:
+                                self._restart_game()
+                            else:
+                                self.state = GameState.MAIN_MENU
+                                self.paused = False
+                                self.pause_view.confirming_menu = False
+                        else:
+                            self.pause_view.confirming_restart = False
+                            self.pause_view.confirming_menu = False
+                            self.menu_focus = 0
+                    else:
+                        if self.menu_focus == 0:
+                            self.paused = False
+                            self.menu_focus = 0
+                        elif self.menu_focus == 1:
+                            self.pause_view.confirming_restart = True
+                            self.menu_focus = 1
+                        elif self.menu_focus == 2:
+                            self._open_settings()
+                        elif self.menu_focus == 3:
+                            self.pause_view.confirming_menu = True
+                            self.menu_focus = 1
                 return
 
             if self.fast_dropping:
@@ -549,6 +674,17 @@ class PygameRunner:
                         self.fast_dropping = False
                         self.current_fall_delay = self.config.fall_delay
 
+        if self.engine.game_over and not self._game_over_reloaded:
+            self._game_over_reloaded = True
+            loaded = load_persistent_data("sandtris_highscore", self.high_score_path)
+            self._cached_high_score = loaded if isinstance(loaded, list) else []
+
+        if self.engine.level > self._prev_level:
+            self.level_up_timer_ms = 2000.0
+            self._prev_level = self.engine.level
+        if self.level_up_timer_ms > 0:
+            self.level_up_timer_ms = max(0.0, self.level_up_timer_ms - dt_ms)
+
         sand_step_interval_ms = self._sand_step_interval_ms()
         self.sand_step_accumulator_ms = min(
             self.sand_step_accumulator_ms + dt_ms,
@@ -567,6 +703,7 @@ class PygameRunner:
                 self.screen,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
+                self.menu_focus,
             )
             pygame.display.flip()
             return
@@ -661,22 +798,38 @@ class PygameRunner:
             self.mouse_down,
         )
 
+        if self.level_up_timer_ms > 0 and not self.engine.game_over:
+            t = self.level_up_timer_ms
+            text_alpha = int(min((2000.0 - t) / 300.0, t / 400.0, 1.0) * 255)
+            layout = self.screen_view.get_layout(self.screen.get_rect())
+            level_surf = self.title_font.render(
+                f"LEVEL {self.engine.level}!", True, (255, 255, 255)
+            )
+            level_surf.set_alpha(text_alpha)
+            self.screen.blit(
+                level_surf,
+                level_surf.get_rect(center=layout.board_rect.center),
+            )
+
         if self.engine.game_over:
             self.game_over_view.draw(
                 self.screen,
                 self.engine.score,
                 self.engine.level,
                 self.engine.max_combo,
+                self._get_rank(),
                 self.game_over_status,
                 self.player_name,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
+                self.menu_focus,
             )
         elif self.paused:
             self.pause_view.draw(
                 self.screen,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
+                self.menu_focus,
             )
 
         pygame.display.flip()

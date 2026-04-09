@@ -30,26 +30,26 @@ class GameOverScreen:
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        modal = pygame.Rect(0, 0, modal_width, 410)
+        modal = pygame.Rect(0, 0, modal_width, 440)
         modal.center = surface_rect.center
 
         return {
             "modal": modal,
             "restart": pygame.Rect(
                 modal.left + margin,
-                modal.top + 218,
+                modal.top + 246,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "save": pygame.Rect(
                 modal.left + margin,
-                modal.top + 218 + step,
+                modal.top + 246 + step,
                 modal.width - margin * 2,
                 btn_h,
             ),
             "menu": pygame.Rect(
                 modal.left + margin,
-                modal.top + 218 + step * 2,
+                modal.top + 246 + step * 2,
                 modal.width - margin * 2,
                 btn_h,
             ),
@@ -70,16 +70,31 @@ class GameOverScreen:
     ) -> bool:
         return self.get_layout(surface_rect)["menu"].collidepoint(pos)
 
+    def name_field_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        layout = self.get_layout(surface_rect)
+        modal = layout["modal"]
+        name_field_rect = pygame.Rect(
+            modal.left + 20 + modal.width // 3,
+            modal.top + 184,
+            modal.width - 20 - modal.width // 3 - 20,
+            32,
+        )
+        return name_field_rect.collidepoint(pos)
+
     def draw(
         self,
         surface: pygame.Surface,
         score: int,
         level: int,
         max_combo: int,
+        rank: int | None,
         status_message: str,
         player_name: str,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
+        focused_idx: int = -1,
     ) -> None:
         overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         overlay.fill(self.theme.overlay)
@@ -124,7 +139,19 @@ class GameOverScreen:
         )
         surface.blit(combo_text, combo_rect)
 
-        name_row_y = modal.top + 156
+        if rank is not None:
+            rank_label = f"RANK #{rank}"
+            rank_color = self.theme.accent_text
+        else:
+            rank_label = "NOT IN TOP 10"
+            rank_color = self.theme.panel_border_bright
+        rank_surf = self.body_font.render(rank_label, True, rank_color)
+        surface.blit(
+            rank_surf,
+            rank_surf.get_rect(center=(modal.centerx, modal.top + 162)),
+        )
+
+        name_row_y = modal.top + 184
         name_field_rect = pygame.Rect(
             modal.left + 20 + modal.width // 3,
             name_row_y,
@@ -141,15 +168,13 @@ class GameOverScreen:
         pygame.draw.rect(
             surface, self.theme.panel_bg_alt, name_field_rect, border_radius=3
         )
-        pygame.draw.rect(
-            surface,
-            self.theme.panel_border_bright,
-            name_field_rect,
-            2,
-            border_radius=3,
+        name_border = (
+            self.theme.accent_text if focused_idx == -1 else self.theme.panel_border_bright
         )
+        pygame.draw.rect(surface, name_border, name_field_rect, 2, border_radius=3)
+        cursor = "_" if focused_idx == -1 else ""
         name_surf = self.body_font.render(
-            f"{player_name}_", True, self.theme.title_text
+            f"{player_name}{cursor}", True, self.theme.title_text
         )
         surface.blit(
             name_surf,
@@ -163,36 +188,16 @@ class GameOverScreen:
             status_message, True, self.theme.panel_border_bright
         )
         status_rect = status_text.get_rect(
-            center=(modal.centerx, modal.top + 202)
+            center=(modal.centerx, modal.top + 228)
         )
         surface.blit(status_text, status_rect)
 
-        hov_restart = layout["restart"].collidepoint(mouse_pos)
-        self.restart_button.draw(
-            surface,
-            layout["restart"],
-            self.body_font,
-            self.theme,
-            hov_restart,
-            hov_restart and mouse_down,
-        )
-
-        hov_save = layout["save"].collidepoint(mouse_pos)
-        self.save_button.draw(
-            surface,
-            layout["save"],
-            self.body_font,
-            self.theme,
-            hov_save,
-            hov_save and mouse_down,
-        )
-
-        hov_menu = layout["menu"].collidepoint(mouse_pos)
-        self.menu_button.draw(
-            surface,
-            layout["menu"],
-            self.body_font,
-            self.theme,
-            hov_menu,
-            hov_menu and mouse_down,
-        )
+        for idx, (key, btn) in enumerate([
+            ("restart", self.restart_button),
+            ("save", self.save_button),
+            ("menu", self.menu_button),
+        ]):
+            mouse_hov = layout[key].collidepoint(mouse_pos)
+            hov = mouse_hov or focused_idx == idx
+            btn.draw(surface, layout[key], self.body_font, self.theme,
+                     hov, mouse_hov and mouse_down)

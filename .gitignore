@@ -12,3 +12,6 @@ wheels/
 # Local Claude context
 CLAUDE.md
 CLAUDE_HCI.md
+
+# Runtime data
+data/*.json

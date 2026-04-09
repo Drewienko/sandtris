@@ -135,6 +135,7 @@ class PauseScreen:
         surface: pygame.Surface,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
+        focused_idx: int = -1,
     ) -> None:
         overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
         overlay.fill(self.theme.overlay)
@@ -162,62 +163,22 @@ class PauseScreen:
         surface.blit(title, title_rect)
 
         if self.confirming_restart or self.confirming_menu:
-            hov_yes = layout["yes"].collidepoint(mouse_pos)
-            self.yes_button.draw(
-                surface,
-                layout["yes"],
-                self.body_font,
-                self.theme,
-                hov_yes,
-                hov_yes and mouse_down,
-            )
-
-            hov_no = layout["no"].collidepoint(mouse_pos)
-            self.no_button.draw(
-                surface,
-                layout["no"],
-                self.body_font,
-                self.theme,
-                hov_no,
-                hov_no and mouse_down,
-            )
+            for idx, (key, btn) in enumerate([
+                ("yes", self.yes_button),
+                ("no", self.no_button),
+            ]):
+                mouse_hov = layout[key].collidepoint(mouse_pos)
+                hov = mouse_hov or focused_idx == idx
+                btn.draw(surface, layout[key], self.body_font, self.theme,
+                         hov, mouse_hov and mouse_down)
         else:
-            hov_resume = layout["resume"].collidepoint(mouse_pos)
-            self.resume_button.draw(
-                surface,
-                layout["resume"],
-                self.body_font,
-                self.theme,
-                hov_resume,
-                hov_resume and mouse_down,
-            )
-
-            hov_restart = layout["restart"].collidepoint(mouse_pos)
-            self.restart_button.draw(
-                surface,
-                layout["restart"],
-                self.body_font,
-                self.theme,
-                hov_restart,
-                hov_restart and mouse_down,
-            )
-
-            hov_settings = layout["settings"].collidepoint(mouse_pos)
-            self.settings_button.draw(
-                surface,
-                layout["settings"],
-                self.body_font,
-                self.theme,
-                hov_settings,
-                hov_settings and mouse_down,
-            )
-
-            hov_menu = layout["menu"].collidepoint(mouse_pos)
-            self.menu_button.draw(
-                surface,
-                layout["menu"],
-                self.body_font,
-                self.theme,
-                hov_menu,
-                hov_menu and mouse_down,
-            )
+            for idx, (key, btn) in enumerate([
+                ("resume", self.resume_button),
+                ("restart", self.restart_button),
+                ("settings", self.settings_button),
+                ("menu", self.menu_button),
+            ]):
+                mouse_hov = layout[key].collidepoint(mouse_pos)
+                hov = mouse_hov or focused_idx == idx
+                btn.draw(surface, layout[key], self.body_font, self.theme,
+                         hov, mouse_hov and mouse_down)

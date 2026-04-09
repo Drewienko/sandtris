@@ -139,6 +139,7 @@ class MainMenuScreen:
         surface: pygame.Surface,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
+        focused_idx: int = -1,
     ) -> None:
         surface.fill(self.theme.screen_bg)
 
@@ -179,52 +180,14 @@ class MainMenuScreen:
             )
             return
 
-        hov_play = layout["play"].collidepoint(mouse_pos)
-        self.play_button.draw(
-            surface,
-            layout["play"],
-            self.body_font,
-            self.theme,
-            hov_play,
-            hov_play and mouse_down,
-        )
-
-        hov_settings = layout["settings"].collidepoint(mouse_pos)
-        self.settings_button.draw(
-            surface,
-            layout["settings"],
-            self.body_font,
-            self.theme,
-            hov_settings,
-            hov_settings and mouse_down,
-        )
-
-        hov_scores = layout["scores"].collidepoint(mouse_pos)
-        self.scores_button.draw(
-            surface,
-            layout["scores"],
-            self.body_font,
-            self.theme,
-            hov_scores,
-            hov_scores and mouse_down,
-        )
-
-        hov_help = layout["help"].collidepoint(mouse_pos)
-        self.help_button.draw(
-            surface,
-            layout["help"],
-            self.body_font,
-            self.theme,
-            hov_help,
-            hov_help and mouse_down,
-        )
-
-        hov_quit = layout["quit"].collidepoint(mouse_pos)
-        self.quit_button.draw(
-            surface,
-            layout["quit"],
-            self.body_font,
-            self.theme,
-            hov_quit,
-            hov_quit and mouse_down,
-        )
+        for idx, (key, btn) in enumerate([
+            ("play", self.play_button),
+            ("settings", self.settings_button),
+            ("scores", self.scores_button),
+            ("help", self.help_button),
+            ("quit", self.quit_button),
+        ]):
+            mouse_hov = layout[key].collidepoint(mouse_pos)
+            hov = mouse_hov or focused_idx == idx
+            btn.draw(surface, layout[key], self.body_font, self.theme,
+                     hov, mouse_hov and mouse_down)
