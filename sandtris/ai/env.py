@@ -11,7 +11,7 @@ Usage:
             break
 """
 
-from sandtris.ai.base import Action, AgentBase, GameObservation
+from sandtris.ai.base import Action, GameObservation
 from sandtris.core.config import GameConfig
 from sandtris.core.engine import SandtrisEngine
 

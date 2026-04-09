@@ -15,7 +15,9 @@ class Action(Enum):
 
 @dataclass
 class GameObservation:
-    grid: np.ndarray        # shape (height, width), dtype uint8 — copy of engine.grid.data
+    grid: (
+        np.ndarray
+    )  # shape (height, width), dtype uint8 — copy of engine.grid.data
     piece_shape: str | None  # piece.name
     piece_x: int
     piece_y: int

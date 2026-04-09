@@ -3,6 +3,7 @@ Tests for the high-score list-merge logic that lives in _save_high_score().
 
 We extract the pure data transformation so we don't need pygame or a display.
 """
+
 from __future__ import annotations
 
 

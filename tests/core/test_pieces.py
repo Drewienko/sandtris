@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from sandtris.core.pieces import SHAPES, Tetromino
 
@@ -46,7 +45,9 @@ def test_color_matrix_edge_cells_are_dark() -> None:
         for col in range(piece.shape.shape[1]):
             if piece.shape[row, col] != 0:
                 color = piece.color_matrix[row, col]
-                assert color in (2, 12), f"unexpected color {color} at ({row},{col})"
+                assert color in (2, 12), (
+                    f"unexpected color {color} at ({row},{col})"
+                )
 
 
 def test_color_matrix_interior_cells_use_base_color() -> None:

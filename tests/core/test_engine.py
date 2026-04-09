@@ -1,6 +1,5 @@
 import itertools
 
-import pytest
 
 from sandtris.core.config import GameConfig
 from sandtris.core.engine import SandtrisEngine
@@ -105,6 +104,7 @@ def test_rotate_active_piece_reverts_on_collision() -> None:
     engine.grid.data.fill(0)
     engine.active_piece = Tetromino("I", x=0, y=0, color_id=1, scale=1)
     import numpy as np
+
     original_shape = engine.active_piece.shape.copy()
     engine.grid.data.fill(1)
     engine.active_piece.shape = original_shape.copy()

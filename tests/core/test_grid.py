@@ -1,5 +1,3 @@
-import pytest
-
 from sandtris.core.grid import Grid
 
 

@@ -86,6 +86,12 @@ class SandtrisEngine:
                 return True
         return False
 
+    def _check_collision_at(self, piece: Tetromino, dx: int, dy: int) -> bool:
+        for x, y, _ in piece.get_cells():
+            if self.grid.is_occupied(x + dx, y + dy):
+                return True
+        return False
+
     def move_active_piece(self, dx: int, dy: int) -> bool:
         if not self.active_piece or self.game_over:
             return False

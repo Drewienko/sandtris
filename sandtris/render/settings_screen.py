@@ -33,7 +33,13 @@ class SettingsScreen:
         name_row_height = 56
         back_height = self.dims.modal_button_height + gap * 2
         sections_top = panel.top + title_height + name_row_height + gap * 2
-        sections_height = panel.height - title_height - name_row_height - back_height - gap * 3
+        sections_height = (
+            panel.height
+            - title_height
+            - name_row_height
+            - back_height
+            - gap * 3
+        )
         section_width = (panel.width - gap) // 2
 
         name_row = pygame.Rect(
@@ -188,10 +194,14 @@ class SettingsScreen:
         )
 
         name_row = layout["name_row"]
-        label = self.body_font.render("PLAYER NAME", True, self.theme.body_text)
+        label = self.body_font.render(
+            "PLAYER NAME", True, self.theme.body_text
+        )
         surface.blit(
             label,
-            label.get_rect(left=name_row.left + self.dims.margin, centery=name_row.centery),
+            label.get_rect(
+                left=name_row.left + self.dims.margin, centery=name_row.centery
+            ),
         )
         field_rect = self._name_field_rect(name_row)
         border_color = (
@@ -202,9 +212,7 @@ class SettingsScreen:
         pygame.draw.rect(
             surface, self.theme.panel_bg_alt, field_rect, border_radius=3
         )
-        pygame.draw.rect(
-            surface, border_color, field_rect, 2, border_radius=3
-        )
+        pygame.draw.rect(surface, border_color, field_rect, 2, border_radius=3)
         display = f"{player_name}_" if self.name_field_active else player_name
         name_surf = self.body_font.render(display, True, self.theme.title_text)
         surface.blit(
@@ -265,7 +273,9 @@ class SettingsScreen:
                 label,
                 label.get_rect(left=rect.left + 14, centery=rect.centery),
             )
-            accent_rect = pygame.Rect(rect.right - 58, rect.centery - 18, 36, 36)
+            accent_rect = pygame.Rect(
+                rect.right - 58, rect.centery - 18, 36, 36
+            )
             pygame.draw.rect(surface, preview_theme.accent_panel, accent_rect)
             pygame.draw.rect(surface, preview_theme.title_text, accent_rect, 2)
 

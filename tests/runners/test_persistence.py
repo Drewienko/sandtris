@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
-import pytest
 
-from sandtris.runners.pygame_runner import load_persistent_data, save_persistent_data
+from sandtris.runners.pygame_runner import (
+    load_persistent_data,
+    save_persistent_data,
+)
 
 
 def test_round_trip_list(tmp_path: Path) -> None:

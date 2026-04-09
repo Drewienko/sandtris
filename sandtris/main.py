@@ -1,4 +1,3 @@
-import asyncio
 import argparse
 from sandtris.core.config import GameConfig
 from sandtris.runners.pygame_runner import PygameRunner

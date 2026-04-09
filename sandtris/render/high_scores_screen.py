@@ -113,7 +113,9 @@ class HighScoresScreen:
 
             for rank, entry in enumerate(high_scores[:10], start=1):
                 color = (
-                    self.theme.accent_text if rank == 1 else self.theme.title_text
+                    self.theme.accent_text
+                    if rank == 1
+                    else self.theme.title_text
                 )
                 row = [
                     str(rank),

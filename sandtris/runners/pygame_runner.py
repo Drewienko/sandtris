@@ -334,7 +334,9 @@ class PygameRunner:
                 elif event.key in (pygame.K_RETURN, pygame.K_ESCAPE):
                     self.settings_view.name_field_active = False
                     self._save_settings()
-                elif event.unicode.isprintable() and len(self.player_name) < 12:
+                elif (
+                    event.unicode.isprintable() and len(self.player_name) < 12
+                ):
                     self.player_name += event.unicode.upper()
                 return
             if event.key in self.config.key_pause:
@@ -395,7 +397,9 @@ class PygameRunner:
                 loaded = load_persistent_data(
                     "sandtris_highscore", self.high_score_path
                 )
-                self._cached_high_score = loaded if isinstance(loaded, list) else []
+                self._cached_high_score = (
+                    loaded if isinstance(loaded, list) else []
+                )
                 self.state = GameState.HIGH_SCORES
             elif self.main_menu_view.help_button_contains(
                 screen_rect, event.pos
@@ -501,8 +505,7 @@ class PygameRunner:
                 if event.key == pygame.K_BACKSPACE:
                     self.player_name = self.player_name[:-1]
                 elif (
-                    event.unicode.isprintable()
-                    and len(self.player_name) < 12
+                    event.unicode.isprintable() and len(self.player_name) < 12
                 ):
                     self.player_name += event.unicode.upper()
                 return
@@ -519,10 +522,12 @@ class PygameRunner:
                 self.engine.move_active_piece(1, 0)
             elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
-            elif (
-                event.key in self.config.key_down
-                or event.key in self.config.key_drop
-            ):
+            elif event.key in self.config.key_drop:
+                while self.engine.move_active_piece(0, 1):
+                    pass
+                self.engine.lock_piece()
+                self.piece_drop_accumulator_ms = 0
+            elif event.key in self.config.key_down:
                 self.fast_dropping = True
                 self.current_fall_delay = self.config.fast_fall_delay
 
@@ -596,10 +601,26 @@ class PygameRunner:
             return
 
         # grid.data is (height, width); surfarray expects (width, height, 3)
-        color_data = self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
+        color_data = (
+            self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
+        )
 
         if self.engine.active_piece and not self.engine.game_over:
-            for bx, by, color in self.engine.active_piece.get_cells():
+            piece = self.engine.active_piece
+            drop = 0
+            while not self.engine._check_collision_at(piece, 0, drop + 1):
+                drop += 1
+            if drop > 0:
+                for bx, by, color in piece.get_cells():
+                    gy = by + drop
+                    if (
+                        0 <= bx < self.config.width
+                        and 0 <= gy < self.config.height
+                        and self.engine.grid.data[gy, bx] == 0
+                    ):
+                        color_data[bx, gy] = self._palette_lut[color] // 3
+
+            for bx, by, color in piece.get_cells():
                 if (
                     0 <= bx < self.config.width
                     and 0 <= by < self.config.height
@@ -612,8 +633,10 @@ class PygameRunner:
             cells = np.array(self.engine.flash_cells)
             xs, ys = cells[:, 0], cells[:, 1]
             valid = (
-                (xs >= 0) & (xs < self.config.width) &
-                (ys >= 0) & (ys < self.config.height)
+                (xs >= 0)
+                & (xs < self.config.width)
+                & (ys >= 0)
+                & (ys < self.config.height)
             )
             xs, ys = xs[valid], ys[valid]
             orig = color_data[xs, ys].astype(np.float32)

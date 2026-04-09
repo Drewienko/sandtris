@@ -103,18 +103,14 @@ class HowToPlayScreen:
             (config.key_left, "Move Left"),
             (config.key_right, "Move Right"),
             (config.key_up, "Rotate"),
-            (
-                config.key_down + config.key_drop,
-                "Fast Drop",
-            ),
+            (config.key_down, "Soft Drop"),
+            (config.key_drop, "Hard Drop"),
             (config.key_pause, "Pause"),
         ]
 
         margin = self.dims.modal_button_margin
         for keys, action in controls:
-            keys_str = " / ".join(
-                pygame.key.name(k).upper() for k in keys
-            )
+            keys_str = " / ".join(pygame.key.name(k).upper() for k in keys)
             keys_surf = self.body_font.render(
                 keys_str, True, self.theme.title_text
             )
