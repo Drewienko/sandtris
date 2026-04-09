@@ -21,6 +21,7 @@ from sandtris.render.ui import (
     THEME_PRESETS,
     build_color_palette,
 )
+from sandtris.render.vs_screen import VsScreen
 
 # Try to get the window object for pygbag localStorage
 window = None
@@ -64,12 +65,57 @@ def save_persistent_data(key: str, fallback_path: Path, data: dict) -> None:
             pass
 
 
+_DEFAULT_HIGH_SCORES = [
+    {
+        "player": "ALEXEY",
+        "score": 99999,
+        "level": 99,
+        "max_combo": 10,
+        "date": "1984-06-06",
+        "pieces_placed": 999,
+        "pixels_cleared": 9999,
+        "duration_s": 600,
+    },
+    {
+        "player": "CONWAY",
+        "score": 42000,
+        "level": 21,
+        "max_combo": 9,
+        "date": "1970-10-21",
+        "pieces_placed": 280,
+        "pixels_cleared": 4200,
+        "duration_s": 480,
+    },
+    {
+        "player": "NEUMANN",
+        "score": 29000,
+        "level": 14,
+        "max_combo": 8,
+        "date": "1966-03-29",
+        "pieces_placed": 190,
+        "pixels_cleared": 2900,
+        "duration_s": 360,
+    },
+    {
+        "player": "SANDY",
+        "score": 13700,
+        "level": 7,
+        "max_combo": 6,
+        "date": "2024-04-01",
+        "pieces_placed": 91,
+        "pixels_cleared": 1370,
+        "duration_s": 214,
+    },
+]
+
+
 class GameState(Enum):
     MAIN_MENU = auto()
     PLAYING = auto()
     SETTINGS = auto()
     HOW_TO_PLAY = auto()
     HIGH_SCORES = auto()
+    PLAYER_VS_AI = auto()
 
 
 class PygameRunner:
@@ -114,11 +160,20 @@ class PygameRunner:
         self.player_name = settings_data.get("player_name", "PLAYER")
         self.game_start_time = time.time()
         loaded_hs = load_persistent_data("sandtris_highscore", self.high_score_path)
-        self._cached_high_score: list = loaded_hs if isinstance(loaded_hs, list) else []
+        if not isinstance(loaded_hs, list):
+            self._cached_high_score: list = list(_DEFAULT_HIGH_SCORES)
+            save_persistent_data(
+                "sandtris_highscore", self.high_score_path, self._cached_high_score
+            )
+        else:
+            self._cached_high_score: list = loaded_hs
         self.level_up_timer_ms: float = 0.0
         self._prev_level: int = 1
         self.menu_focus: int = 0
         self._game_over_reloaded: bool = False
+        self.ai_engine: SandtrisEngine | None = None
+        self.ai_piece_drop_accumulator_ms: float = 0.0
+        self.vs_result: str | None = None
 
         if not self.config.headless:
             if not window and os.environ.get("WAYLAND_DISPLAY"):
@@ -161,6 +216,7 @@ class PygameRunner:
             self.high_scores_view = HighScoresScreen(
                 self.title_font, self.body_font
             )
+            self.vs_view = VsScreen(self.title_font, self.body_font)
             self._apply_theme(self.theme_name)
             pygame.key.set_repeat(200, 50)
 
@@ -217,6 +273,8 @@ class PygameRunner:
                 self._handle_how_to_play_events(event)
             elif self.state == GameState.HIGH_SCORES:
                 self._handle_high_scores_events(event)
+            elif self.state == GameState.PLAYER_VS_AI:
+                self._handle_vs_events(event)
 
     def _save_settings(self) -> None:
         save_persistent_data(
@@ -245,6 +303,8 @@ class PygameRunner:
         self.how_to_play_view.theme = theme
         self.high_scores_view.theme = theme
         self.settings_view.theme = theme
+        if hasattr(self, "vs_view"):
+            self.vs_view.theme = theme
         self.color_palette = build_color_palette(
             theme.screen_bg,
             SAND_PALETTE_PRESETS[self.sand_palette_name],
@@ -311,6 +371,8 @@ class PygameRunner:
     def _open_settings(self) -> None:
         self.previous_state = self.state
         self.state = GameState.SETTINGS
+        self.menu_focus = 0
+        self.settings_view.name_field_active = False
 
     def _restart_game(self) -> None:
         self.main_menu_view.confirming_quit = False
@@ -370,6 +432,177 @@ class PygameRunner:
             if event.key in self.config.key_pause:
                 self._save_settings()
                 self.state = self.previous_state
+                self.menu_focus = 0
+                return
+            if event.key in self.config.key_down:
+                self.menu_focus = (self.menu_focus + 1) % 4
+            elif event.key in self.config.key_up:
+                self.menu_focus = (self.menu_focus - 1) % 4
+            elif event.key in self.config.key_left:
+                if self.menu_focus == 1:
+                    themes = list(THEME_PRESETS.keys())
+                    self._apply_theme(themes[(themes.index(self.theme_name) - 1) % len(themes)])
+                elif self.menu_focus == 2:
+                    palettes = list(SAND_PALETTE_PRESETS.keys())
+                    self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) - 1) % len(palettes)])
+            elif event.key in self.config.key_right:
+                if self.menu_focus == 1:
+                    themes = list(THEME_PRESETS.keys())
+                    self._apply_theme(themes[(themes.index(self.theme_name) + 1) % len(themes)])
+                elif self.menu_focus == 2:
+                    palettes = list(SAND_PALETTE_PRESETS.keys())
+                    self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) + 1) % len(palettes)])
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                if self.menu_focus == 0:
+                    self.settings_view.name_field_active = True
+                elif self.menu_focus == 3:
+                    self.settings_view.name_field_active = False
+                    self._save_settings()
+                    self.state = self.previous_state
+                    self.menu_focus = 0
+
+    def _start_vs_game(self) -> None:
+        self.ai_engine = SandtrisEngine(self.config)
+        self.ai_piece_drop_accumulator_ms = 0.0
+        self.vs_result = None
+        self.menu_focus = 0
+        self._restart_game()
+        self.state = GameState.PLAYER_VS_AI
+
+    def _handle_vs_events(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.mouse_down = True
+            screen_rect = self.screen.get_rect()
+            if self.vs_result is not None:
+                if self.vs_view.restart_button_contains(screen_rect, event.pos):
+                    self._start_vs_game()
+                    return
+                if self.vs_view.menu_button_contains(screen_rect, event.pos):
+                    self.state = GameState.MAIN_MENU
+                    self.menu_focus = 0
+                    return
+            elif self.paused:
+                if self.pause_view.yes_button_contains(screen_rect, event.pos):
+                    if self.pause_view.confirming_restart:
+                        self._start_vs_game()
+                    elif self.pause_view.confirming_menu:
+                        self.state = GameState.MAIN_MENU
+                        self.paused = False
+                        self.pause_view.confirming_menu = False
+                    return
+                if self.pause_view.no_button_contains(screen_rect, event.pos):
+                    self.pause_view.confirming_restart = False
+                    self.pause_view.confirming_menu = False
+                    return
+                if self.pause_view.resume_button_contains(screen_rect, event.pos):
+                    self.paused = False
+                    return
+                if self.pause_view.restart_button_contains(screen_rect, event.pos):
+                    self.pause_view.confirming_restart = True
+                    return
+                if self.pause_view.settings_button_contains(screen_rect, event.pos):
+                    self._open_settings()
+                    return
+                if self.pause_view.menu_button_contains(screen_rect, event.pos):
+                    self.pause_view.confirming_menu = True
+                    return
+            else:
+                if self.vs_view.pause_button_contains(screen_rect, event.pos):
+                    self.paused = True
+                    self.menu_focus = 0
+                    return
+                if self.vs_view.quit_button_contains(screen_rect, event.pos):
+                    self.state = GameState.MAIN_MENU
+                    self.menu_focus = 0
+                    return
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.mouse_down = False
+
+        if event.type == pygame.KEYDOWN:
+            if event.key in self.config.key_pause:
+                if self.vs_result is None:
+                    self.paused = not self.paused
+                    if not self.paused:
+                        self.pause_view.confirming_restart = False
+                        self.pause_view.confirming_menu = False
+                elif self.vs_result is not None:
+                    self.state = GameState.MAIN_MENU
+                    self.menu_focus = 0
+                return
+
+            if self.vs_result is not None:
+                if event.key in self.config.key_down:
+                    self.menu_focus = (self.menu_focus + 1) % 2
+                elif event.key in self.config.key_up:
+                    self.menu_focus = (self.menu_focus - 1) % 2
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if self.menu_focus == 0:
+                        self._start_vs_game()
+                    else:
+                        self.state = GameState.MAIN_MENU
+                        self.menu_focus = 0
+                return
+
+            if self.paused:
+                confirming = (
+                    self.pause_view.confirming_restart
+                    or self.pause_view.confirming_menu
+                )
+                n = 2 if confirming else 4
+                if event.key in self.config.key_down:
+                    self.menu_focus = (self.menu_focus + 1) % n
+                elif event.key in self.config.key_up:
+                    self.menu_focus = (self.menu_focus - 1) % n
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if confirming:
+                        if self.menu_focus == 0:
+                            if self.pause_view.confirming_restart:
+                                self._start_vs_game()
+                            else:
+                                self.state = GameState.MAIN_MENU
+                                self.paused = False
+                                self.pause_view.confirming_menu = False
+                        else:
+                            self.pause_view.confirming_restart = False
+                            self.pause_view.confirming_menu = False
+                            self.menu_focus = 0
+                    else:
+                        if self.menu_focus == 0:
+                            self.paused = False
+                            self.menu_focus = 0
+                        elif self.menu_focus == 1:
+                            self.pause_view.confirming_restart = True
+                            self.menu_focus = 1
+                        elif self.menu_focus == 2:
+                            self._open_settings()
+                        elif self.menu_focus == 3:
+                            self.pause_view.confirming_menu = True
+                            self.menu_focus = 1
+                return
+
+            if self.engine.game_over:
+                return
+
+            if event.key in self.config.key_left:
+                self.engine.move_active_piece(-1, 0)
+            elif event.key in self.config.key_right:
+                self.engine.move_active_piece(1, 0)
+            elif event.key in self.config.key_up:
+                self.engine.rotate_active_piece()
+            elif event.key in self.config.key_drop:
+                while self.engine.move_active_piece(0, 1):
+                    pass
+                self.engine.lock_piece()
+                self.piece_drop_accumulator_ms = 0
+            elif event.key in self.config.key_down:
+                self.fast_dropping = True
+                self.current_fall_delay = self.config.fast_fall_delay
+
+        if event.type == pygame.KEYUP:
+            if event.key in self.config.key_down:
+                self.fast_dropping = False
+                self.current_fall_delay = self.config.fall_delay
 
     def _handle_how_to_play_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -415,6 +648,8 @@ class PygameRunner:
             ):
                 self._restart_game()
                 self.state = GameState.PLAYING
+            elif self.main_menu_view.vs_button_contains(screen_rect, event.pos):
+                self._start_vs_game()
             elif self.main_menu_view.settings_button_contains(
                 screen_rect, event.pos
             ):
@@ -457,16 +692,18 @@ class PygameRunner:
                     self.menu_focus = (self.menu_focus - 1) % 2
                 return
             if event.key in self.config.key_down:
-                self.menu_focus = (self.menu_focus + 1) % 5
+                self.menu_focus = (self.menu_focus + 1) % 6
             elif event.key in self.config.key_up:
-                self.menu_focus = (self.menu_focus - 1) % 5
+                self.menu_focus = (self.menu_focus - 1) % 6
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.menu_focus == 0:
                     self._restart_game()
                     self.state = GameState.PLAYING
                 elif self.menu_focus == 1:
-                    self._open_settings()
+                    self._start_vs_game()
                 elif self.menu_focus == 2:
+                    self._open_settings()
+                elif self.menu_focus == 3:
                     loaded = load_persistent_data(
                         "sandtris_highscore", self.high_score_path
                     )
@@ -475,11 +712,11 @@ class PygameRunner:
                     )
                     self.state = GameState.HIGH_SCORES
                     self.menu_focus = 0
-                elif self.menu_focus == 3:
+                elif self.menu_focus == 4:
                     self.previous_state = GameState.MAIN_MENU
                     self.state = GameState.HOW_TO_PLAY
                     self.menu_focus = 0
-                elif self.menu_focus == 4:
+                elif self.menu_focus == 5:
                     self.main_menu_view.confirming_quit = True
                     self.menu_focus = 1
 
@@ -656,7 +893,57 @@ class PygameRunner:
                 self.fast_dropping = True
                 self.current_fall_delay = self.config.fast_fall_delay
 
+    def _update_vs(self, dt_ms: float) -> None:
+        if self.vs_result is not None or self.ai_engine is None or self.paused:
+            return
+
+        if not self.engine.game_over:
+            self.piece_drop_accumulator_ms += dt_ms
+            interval = self._piece_drop_interval_ms()
+            while self.piece_drop_accumulator_ms >= interval:
+                self.piece_drop_accumulator_ms -= interval
+                if self.engine.active_piece:
+                    if not self.engine.move_active_piece(0, 1):
+                        self.engine.lock_piece()
+                        self.fast_dropping = False
+                        self.current_fall_delay = self.config.fall_delay
+
+        if not self.ai_engine.game_over:
+            self.ai_piece_drop_accumulator_ms += dt_ms
+            ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0
+            while self.ai_piece_drop_accumulator_ms >= ai_interval:
+                self.ai_piece_drop_accumulator_ms -= ai_interval
+                if self.ai_engine.active_piece:
+                    if not self.ai_engine.move_active_piece(0, 1):
+                        self.ai_engine.lock_piece()
+
+        sand_interval = self._sand_step_interval_ms()
+        self.sand_step_accumulator_ms = min(
+            self.sand_step_accumulator_ms + dt_ms, sand_interval * 2
+        )
+        while self.sand_step_accumulator_ms >= sand_interval:
+            self.sand_step_accumulator_ms -= sand_interval
+            self.engine.tick(sand_interval)
+            self.ai_engine.tick(sand_interval)
+
+        p_over = self.engine.game_over
+        a_over = self.ai_engine.game_over
+        if p_over or a_over:
+            if p_over and a_over:
+                self.vs_result = (
+                    "YOU WIN!" if self.engine.score >= self.ai_engine.score else "AI WINS!"
+                )
+            elif p_over:
+                self.vs_result = "AI WINS!"
+            else:
+                self.vs_result = "YOU WIN!"
+            self.menu_focus = 0
+
     def update(self, dt_ms: float) -> None:
+        if self.state == GameState.PLAYER_VS_AI:
+            self._update_vs(dt_ms)
+            return
+
         if self.state != GameState.PLAYING:
             return
 
@@ -693,6 +980,30 @@ class PygameRunner:
         while self.sand_step_accumulator_ms >= sand_step_interval_ms:
             self.sand_step_accumulator_ms -= sand_step_interval_ms
             self.engine.tick(sand_step_interval_ms)
+
+    def _make_board_surf(
+        self, engine: SandtrisEngine, ghost: bool = True
+    ) -> pygame.Surface:
+        color_data = self._palette_lut[engine.grid.data].transpose(1, 0, 2).copy()
+        if engine.active_piece and not engine.game_over:
+            piece = engine.active_piece
+            if ghost:
+                drop = 0
+                while not engine._check_collision_at(piece, 0, drop + 1):
+                    drop += 1
+                if drop > 0:
+                    for bx, by, color in piece.get_cells():
+                        gy = by + drop
+                        if (
+                            0 <= bx < engine.config.width
+                            and 0 <= gy < engine.config.height
+                            and engine.grid.data[gy, bx] == 0
+                        ):
+                            color_data[bx, gy] = self._palette_lut[color] // 3
+            for bx, by, color in piece.get_cells():
+                if 0 <= bx < engine.config.width and 0 <= by < engine.config.height:
+                    color_data[bx, by] = self._palette_lut[color]
+        return pygame.surfarray.make_surface(color_data)
 
     def draw(self) -> None:
         if self.config.headless:
@@ -733,7 +1044,33 @@ class PygameRunner:
                 self.player_name,
                 pygame.mouse.get_pos(),
                 self.mouse_down,
+                self.menu_focus,
             )
+            pygame.display.flip()
+            return
+        elif self.state == GameState.PLAYER_VS_AI:
+            if self.ai_engine is not None:
+                self.vs_view.draw(
+                    self.screen,
+                    self._make_board_surf(self.engine),
+                    self._make_board_surf(self.ai_engine, ghost=False),
+                    self.engine.score,
+                    self.ai_engine.score,
+                    self.engine.level,
+                    self.ai_engine.level,
+                    self.player_name,
+                    self.vs_result,
+                    pygame.mouse.get_pos(),
+                    self.mouse_down,
+                    self.menu_focus,
+                )
+                if self.paused:
+                    self.pause_view.draw(
+                        self.screen,
+                        pygame.mouse.get_pos(),
+                        self.mouse_down,
+                        self.menu_focus,
+                    )
             pygame.display.flip()
             return
 

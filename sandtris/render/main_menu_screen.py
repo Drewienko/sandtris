@@ -21,6 +21,7 @@ class MainMenuScreen:
         self.theme = theme or ThemeColors()
         self.dims = dims or UIDimensions()
         self.play_button = PixelButton("PLAY")
+        self.vs_button = PixelButton("VS AI")
         self.settings_button = PixelButton("SETTINGS")
         self.scores_button = PixelButton("HIGH SCORES")
         self.help_button = PixelButton("HOW TO PLAY")
@@ -48,7 +49,7 @@ class MainMenuScreen:
                 ),
             }
 
-        panel = pygame.Rect(0, 0, 320, 420)
+        panel = pygame.Rect(0, 0, 320, 480)
         panel.center = surface_rect.center
 
         return {
@@ -59,27 +60,33 @@ class MainMenuScreen:
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "settings": pygame.Rect(
+            "vs": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step,
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "scores": pygame.Rect(
+            "settings": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step * 2,
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "help": pygame.Rect(
+            "scores": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step * 3,
                 panel.width - margin * 2,
                 btn_h,
             ),
-            "quit": pygame.Rect(
+            "help": pygame.Rect(
                 panel.left + margin,
                 panel.top + 100 + step * 4,
+                panel.width - margin * 2,
+                btn_h,
+            ),
+            "quit": pygame.Rect(
+                panel.left + margin,
+                panel.top + 100 + step * 5,
                 panel.width - margin * 2,
                 btn_h,
             ),
@@ -91,6 +98,13 @@ class MainMenuScreen:
         if self.confirming_quit:
             return False
         return self.get_layout(surface_rect)["play"].collidepoint(pos)
+
+    def vs_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        if self.confirming_quit:
+            return False
+        return self.get_layout(surface_rect)["vs"].collidepoint(pos)
 
     def settings_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
@@ -182,6 +196,7 @@ class MainMenuScreen:
 
         for idx, (key, btn) in enumerate([
             ("play", self.play_button),
+            ("vs", self.vs_button),
             ("settings", self.settings_button),
             ("scores", self.scores_button),
             ("help", self.help_button),

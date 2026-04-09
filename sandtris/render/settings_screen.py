@@ -174,6 +174,7 @@ class SettingsScreen:
         player_name: str,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
+        focused_row: int = -1,
     ) -> None:
         surface.fill(self.theme.screen_bg)
         layout = self.get_layout(surface.get_rect())
@@ -194,6 +195,13 @@ class SettingsScreen:
         )
 
         name_row = layout["name_row"]
+        if focused_row == 0 and not self.name_field_active:
+            pygame.draw.rect(
+                surface, self.theme.panel_bg_alt, name_row, border_radius=3
+            )
+            pygame.draw.rect(
+                surface, self.theme.panel_border_bright, name_row, 2, border_radius=3
+            )
         label = self.body_font.render(
             "PLAYER NAME", True, self.theme.body_text
         )
@@ -224,11 +232,17 @@ class SettingsScreen:
 
         theme_section = layout["theme_section"]
         sand_section = layout["sand_section"]
+        theme_border = (
+            self.theme.panel_border_bright if focused_row == 1 else self.theme.panel_border
+        )
+        sand_border = (
+            self.theme.panel_border_bright if focused_row == 2 else self.theme.panel_border
+        )
         draw_panel(
             surface,
             theme_section,
             self.theme.panel_bg_alt,
-            self.theme.panel_border,
+            theme_border,
             self.theme.panel_border_bright,
             self.dims,
         )
@@ -236,7 +250,7 @@ class SettingsScreen:
             surface,
             sand_section,
             self.theme.panel_bg_alt,
-            self.theme.panel_border,
+            sand_border,
             self.theme.panel_border_bright,
             self.dims,
         )
@@ -305,12 +319,13 @@ class SettingsScreen:
             )
 
         back_rect = layout["back"]
-        hovered = back_rect.collidepoint(mouse_pos)
+        mouse_hov = back_rect.collidepoint(mouse_pos)
+        hov = mouse_hov or focused_row == 3
         self.back_button.draw(
             surface,
             back_rect,
             self.body_font,
             self.theme,
-            hovered,
-            hovered and mouse_down,
+            hov,
+            mouse_hov and mouse_down,
         )
