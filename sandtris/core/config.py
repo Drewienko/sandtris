@@ -8,7 +8,9 @@ class GameConfig:
     fps: int = 60
     headless: bool = False
     fall_delay: int = 30
-    fast_fall_delay: int = 1
+    fast_fall_delay: int = 4
+    lock_delay_ms: float = 400.0
+    diagonal_prob: float = 0.4
     key_left: tuple[int, ...] = (pygame.K_LEFT, pygame.K_a)
     key_right: tuple[int, ...] = (pygame.K_RIGHT, pygame.K_d)
     key_up: tuple[int, ...] = (pygame.K_UP, pygame.K_w)

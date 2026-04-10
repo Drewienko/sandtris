@@ -21,11 +21,19 @@ class SandtrisEnv:
         self.config = config or GameConfig()
         self.engine = SandtrisEngine(self.config)
         self._prev_score = 0
+        self._settle_ticks = round(
+            self.config.lock_delay_ms * self.config.fps / 1000
+        )
 
     def reset(self) -> GameObservation:
         self.engine = SandtrisEngine(self.config)
         self._prev_score = 0
         return self._observe()
+
+    def _lock_and_settle(self) -> None:
+        self.engine.lock_piece()
+        for _ in range(self._settle_ticks):
+            self.engine.tick()
 
     def step(self, action: Action) -> tuple[GameObservation, float, bool]:
         if action == Action.MOVE_LEFT:
@@ -35,11 +43,13 @@ class SandtrisEnv:
         elif action == Action.ROTATE:
             self.engine.rotate_active_piece()
         elif action == Action.SOFT_DROP:
-            self.engine.move_active_piece(0, 1)
+            moved = self.engine.move_active_piece(0, 1)
+            if not moved:
+                self._lock_and_settle()
         elif action == Action.HARD_DROP:
             while self.engine.move_active_piece(0, 1):
                 pass
-            self.engine.lock_piece()
+            self._lock_and_settle()
 
         self.engine.tick()
 
@@ -57,7 +67,7 @@ class SandtrisEnv:
             piece_shape=piece.name if piece else None,
             piece_x=piece.x if piece else 0,
             piece_y=piece.y if piece else 0,
-            piece_rotation=0,
+            piece_rotation=piece.rotation if piece else 0,
             next_shape=self.engine.next_shape_name,
             score=self.engine.score,
             level=self.engine.level,

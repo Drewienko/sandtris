@@ -38,6 +38,7 @@ class Tetromino:
         self.color = color_id
         self.x = x
         self.y = y
+        self.rotation = 0
 
         self.color_matrix = np.zeros_like(self.shape, dtype=np.uint8)
         dark_color = self.color + 10
@@ -70,6 +71,7 @@ class Tetromino:
     def rotate(self, times: int = 1) -> None:
         self.shape = np.rot90(self.shape, k=-times)
         self.color_matrix = np.rot90(self.color_matrix, k=-times)
+        self.rotation = (self.rotation + times) % 4
 
     def get_cells(self) -> list[tuple[int, int, int]]:
         cells = []

@@ -4,9 +4,10 @@ import numpy as np
 
 
 class Grid:
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int, diagonal_prob: float = 0.4):
         self.width = width
         self.height = height
+        self.diagonal_prob = diagonal_prob
         self.data = np.zeros((height, width), dtype=np.uint8)
         self.last_cleared: list[tuple[int, int]] = []
 
@@ -22,40 +23,52 @@ class Grid:
             self.data[y, x] = color_id
 
     def update_sand(self) -> None:
+        xs = np.arange(self.width)
         for y in range(self.height - 2, -1, -1):
             row = self.data[y]
             if not row.any():
                 continue
 
             below = self.data[y + 1]
-            xs = np.random.permutation(self.width)
+
+            fall = (row != 0) & (below == 0)
+            below[fall] = row[fall]
+            row[fall] = 0
+
+            remaining = row != 0
+            if not remaining.any():
+                continue
+
             dirs = np.random.randint(0, 2, self.width) * 2 - 1
+            gate = np.random.random(self.width) < self.diagonal_prob
 
-            for i in range(self.width):
-                x = xs[i]
-                color = row[x]
-                if color == 0:
+            for dx in (dirs, -dirs):
+                nx = xs + dx
+                in_bounds = (nx >= 0) & (nx < self.width)
+                nx_safe = np.where(in_bounds, nx, 0)
+                can_move = remaining & gate & in_bounds & (below[nx_safe] == 0)
+                if not can_move.any():
                     continue
-                if below[x] == 0:
-                    below[x] = color
-                    row[x] = 0
-                else:
-                    d = dirs[i]
-                    nx1 = x + d
-                    nx2 = x - d
-                    if 0 <= nx1 < self.width and below[nx1] == 0:
-                        below[nx1] = color
-                        row[x] = 0
-                    elif 0 <= nx2 < self.width and below[nx2] == 0:
-                        below[nx2] = color
-                        row[x] = 0
+                srcs = np.where(can_move)[0]
+                tgts = nx_safe[srcs]
+                perm = np.random.permutation(len(srcs))
+                srcs, tgts = srcs[perm], tgts[perm]
+                _, first = np.unique(tgts, return_index=True)
+                srcs, tgts = srcs[first], tgts[first]
+                below[tgts] = row[srcs]
+                row[srcs] = 0
+                remaining = row != 0
+                if not remaining.any():
+                    break
 
-    def check_line_clears(self) -> int:
+    def check_line_clears(self) -> tuple[int, int]:
+        """Returns (pixels_cleared, connections_cleared)."""
         if not self.data[:, 0].any():
-            return 0
+            return 0, 0
 
         to_clear = set()
         visited = set()
+        connections = 0
 
         for y in range(self.height):
             cell_val = self.data[y, 0]
@@ -91,9 +104,10 @@ class Grid:
 
                 if reaches_right:
                     to_clear.update(component)
+                    connections += 1
 
         self.last_cleared = list(to_clear)
         for nx, ny in to_clear:
             self.data[ny, nx] = 0
 
-        return len(to_clear)
+        return len(to_clear), connections

@@ -21,9 +21,10 @@ def test_tick_scores_cleared_pixels_and_starts_combo() -> None:
 
     engine.tick()
 
-    assert engine.score == engine.grid.width
+    # score = (250 base + pixels) * combo(1) = 250 + grid.width
+    assert engine.score == 250 + engine.grid.width
     assert engine.combo == 2
-    assert engine.combo_timer_ms == 3000.0
+    assert engine.combo_timer_ms == max(500.0, 3000.0 / engine.level)
 
 
 def test_tick_resets_combo_when_timer_expires() -> None:

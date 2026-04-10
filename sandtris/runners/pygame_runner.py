@@ -227,6 +227,12 @@ class PygameRunner:
         self.mouse_down = False
         self.piece_drop_accumulator_ms = 0.0
         self.sand_step_accumulator_ms = 0.0
+        self.pending_lock = False
+        self.lock_timer_ms = 0.0
+        self.pending_lock_ai = False
+        self.lock_timer_ai_ms = 0.0
+        self._das_left_ms: float = 0.0
+        self._das_right_ms: float = 0.0
 
     def _initial_window_size(self) -> tuple[int, int]:
         if window:
@@ -249,7 +255,8 @@ class PygameRunner:
         return (self.current_fall_delay / self.config.fps) * 1000.0
 
     def _sand_step_interval_ms(self) -> float:
-        return 1000.0 / self.config.fps
+        sand_fps = min(self.config.fps, 30) if window else self.config.fps
+        return 1000.0 / sand_fps
 
     def handle_events(self) -> None:
         for event in pygame.event.get():
@@ -390,6 +397,10 @@ class PygameRunner:
         self._prev_level = 1
         self.menu_focus = 0
         self._game_over_reloaded = False
+        self.pending_lock = False
+        self.lock_timer_ms = 0.0
+        self._das_left_ms = 0.0
+        self._das_right_ms = 0.0
 
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -464,6 +475,8 @@ class PygameRunner:
     def _start_vs_game(self) -> None:
         self.ai_engine = SandtrisEngine(self.config)
         self.ai_piece_drop_accumulator_ms = 0.0
+        self.pending_lock_ai = False
+        self.lock_timer_ai_ms = 0.0
         self.vs_result = None
         self.menu_focus = 0
         self._restart_game()
@@ -585,19 +598,35 @@ class PygameRunner:
                 return
 
             if event.key in self.config.key_left:
-                self.engine.move_active_piece(-1, 0)
+                moved = self.engine.move_active_piece(-1, 0)
+                if moved and self.pending_lock:
+                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                        self.pending_lock = False
+                    else:
+                        self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_right:
-                self.engine.move_active_piece(1, 0)
+                moved = self.engine.move_active_piece(1, 0)
+                if moved and self.pending_lock:
+                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                        self.pending_lock = False
+                    else:
+                        self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
+                if self.pending_lock:
+                    self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
                 while self.engine.move_active_piece(0, 1):
                     pass
-                self.engine.lock_piece()
+                self.pending_lock = True
+                self.lock_timer_ms = self.config.lock_delay_ms
                 self.piece_drop_accumulator_ms = 0
+                self.fast_dropping = False
+                self.current_fall_delay = self.config.fall_delay
             elif event.key in self.config.key_down:
-                self.fast_dropping = True
-                self.current_fall_delay = self.config.fast_fall_delay
+                if not self.pending_lock:
+                    self.fast_dropping = True
+                    self.current_fall_delay = self.config.fast_fall_delay
 
         if event.type == pygame.KEYUP:
             if event.key in self.config.key_down:
@@ -879,43 +908,79 @@ class PygameRunner:
                 return
 
             if event.key in self.config.key_left:
-                self.engine.move_active_piece(-1, 0)
+                moved = self.engine.move_active_piece(-1, 0)
+                if moved and self.pending_lock:
+                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                        self.pending_lock = False
+                    else:
+                        self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_right:
-                self.engine.move_active_piece(1, 0)
+                moved = self.engine.move_active_piece(1, 0)
+                if moved and self.pending_lock:
+                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                        self.pending_lock = False
+                    else:
+                        self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
+                if self.pending_lock:
+                    self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
                 while self.engine.move_active_piece(0, 1):
                     pass
-                self.engine.lock_piece()
+                self.pending_lock = True
+                self.lock_timer_ms = self.config.lock_delay_ms
                 self.piece_drop_accumulator_ms = 0
+                self.fast_dropping = False
+                self.current_fall_delay = self.config.fall_delay
             elif event.key in self.config.key_down:
-                self.fast_dropping = True
-                self.current_fall_delay = self.config.fast_fall_delay
+                if not self.pending_lock:
+                    self.fast_dropping = True
+                    self.current_fall_delay = self.config.fast_fall_delay
 
     def _update_vs(self, dt_ms: float) -> None:
         if self.vs_result is not None or self.ai_engine is None or self.paused:
             return
 
         if not self.engine.game_over:
-            self.piece_drop_accumulator_ms += dt_ms
-            interval = self._piece_drop_interval_ms()
-            while self.piece_drop_accumulator_ms >= interval:
-                self.piece_drop_accumulator_ms -= interval
-                if self.engine.active_piece:
-                    if not self.engine.move_active_piece(0, 1):
-                        self.engine.lock_piece()
-                        self.fast_dropping = False
-                        self.current_fall_delay = self.config.fall_delay
+            if self.pending_lock:
+                self.lock_timer_ms -= dt_ms
+                if self.lock_timer_ms <= 0:
+                    self.pending_lock = False
+                    self.engine.lock_piece()
+                    self.fast_dropping = False
+                    self.current_fall_delay = self.config.fall_delay
+                    self.piece_drop_accumulator_ms = 0.0
+            else:
+                self.piece_drop_accumulator_ms += dt_ms
+                interval = self._piece_drop_interval_ms()
+                while self.piece_drop_accumulator_ms >= interval:
+                    self.piece_drop_accumulator_ms -= interval
+                    if self.engine.active_piece:
+                        if not self.engine.move_active_piece(0, 1):
+                            self.pending_lock = True
+                            self.lock_timer_ms = self.config.lock_delay_ms
+                            self.fast_dropping = False
+                            self.current_fall_delay = self.config.fall_delay
+                            break
 
         if not self.ai_engine.game_over:
-            self.ai_piece_drop_accumulator_ms += dt_ms
-            ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0
-            while self.ai_piece_drop_accumulator_ms >= ai_interval:
-                self.ai_piece_drop_accumulator_ms -= ai_interval
-                if self.ai_engine.active_piece:
-                    if not self.ai_engine.move_active_piece(0, 1):
-                        self.ai_engine.lock_piece()
+            if self.pending_lock_ai:
+                self.lock_timer_ai_ms -= dt_ms
+                if self.lock_timer_ai_ms <= 0:
+                    self.pending_lock_ai = False
+                    self.ai_engine.lock_piece()
+                    self.ai_piece_drop_accumulator_ms = 0.0
+            else:
+                self.ai_piece_drop_accumulator_ms += dt_ms
+                ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0
+                while self.ai_piece_drop_accumulator_ms >= ai_interval:
+                    self.ai_piece_drop_accumulator_ms -= ai_interval
+                    if self.ai_engine.active_piece:
+                        if not self.ai_engine.move_active_piece(0, 1):
+                            self.pending_lock_ai = True
+                            self.lock_timer_ai_ms = self.config.lock_delay_ms
+                            break
 
         sand_interval = self._sand_step_interval_ms()
         self.sand_step_accumulator_ms = min(
@@ -939,6 +1004,44 @@ class PygameRunner:
                 self.vs_result = "YOU WIN!"
             self.menu_focus = 0
 
+    _DAS_DELAY_MS = 150.0
+    _DAS_REPEAT_MS = 50.0
+
+    def _update_das(self, dt_ms: float) -> None:
+        keys = pygame.key.get_pressed()
+        left = any(keys[k] for k in self.config.key_left)
+        right = any(keys[k] for k in self.config.key_right)
+
+        if left:
+            self._das_left_ms += dt_ms
+            if self._das_left_ms >= self._DAS_DELAY_MS:
+                reps = int((self._das_left_ms - self._DAS_DELAY_MS) / self._DAS_REPEAT_MS)
+                prev = int((self._das_left_ms - dt_ms - self._DAS_DELAY_MS) / self._DAS_REPEAT_MS) if self._das_left_ms - dt_ms >= self._DAS_DELAY_MS else -1
+                if reps > prev:
+                    moved = self.engine.move_active_piece(-1, 0)
+                    if moved and self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
+        else:
+            self._das_left_ms = 0.0
+
+        if right:
+            self._das_right_ms += dt_ms
+            if self._das_right_ms >= self._DAS_DELAY_MS:
+                reps = int((self._das_right_ms - self._DAS_DELAY_MS) / self._DAS_REPEAT_MS)
+                prev = int((self._das_right_ms - dt_ms - self._DAS_DELAY_MS) / self._DAS_REPEAT_MS) if self._das_right_ms - dt_ms >= self._DAS_DELAY_MS else -1
+                if reps > prev:
+                    moved = self.engine.move_active_piece(1, 0)
+                    if moved and self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
+        else:
+            self._das_right_ms = 0.0
+
     def update(self, dt_ms: float) -> None:
         if self.state == GameState.PLAYER_VS_AI:
             self._update_vs(dt_ms)
@@ -951,15 +1054,29 @@ class PygameRunner:
             return
 
         if not self.engine.game_over:
-            self.piece_drop_accumulator_ms += dt_ms
-            piece_drop_interval_ms = self._piece_drop_interval_ms()
-            while self.piece_drop_accumulator_ms >= piece_drop_interval_ms:
-                self.piece_drop_accumulator_ms -= piece_drop_interval_ms
-                if self.engine.active_piece:
-                    if not self.engine.move_active_piece(0, 1):
-                        self.engine.lock_piece()
-                        self.fast_dropping = False
-                        self.current_fall_delay = self.config.fall_delay
+            if self.pending_lock:
+                self.lock_timer_ms -= dt_ms
+                if self.lock_timer_ms <= 0:
+                    self.pending_lock = False
+                    self.engine.lock_piece()
+                    self.fast_dropping = False
+                    self.current_fall_delay = self.config.fall_delay
+                    self.piece_drop_accumulator_ms = 0.0
+            else:
+                self.piece_drop_accumulator_ms += dt_ms
+                piece_drop_interval_ms = self._piece_drop_interval_ms()
+                while self.piece_drop_accumulator_ms >= piece_drop_interval_ms:
+                    self.piece_drop_accumulator_ms -= piece_drop_interval_ms
+                    if self.engine.active_piece:
+                        if not self.engine.move_active_piece(0, 1):
+                            self.pending_lock = True
+                            self.lock_timer_ms = self.config.lock_delay_ms
+                            self.fast_dropping = False
+                            self.current_fall_delay = self.config.fall_delay
+                            break
+
+        if not self.engine.game_over and not self.paused:
+            self._update_das(dt_ms)
 
         if self.engine.game_over and not self._game_over_reloaded:
             self._game_over_reloaded = True

@@ -12,7 +12,7 @@ class SandtrisEngine:
 
     def __init__(self, config: GameConfig) -> None:
         self.config = config
-        self.grid = Grid(config.width, config.height)
+        self.grid = Grid(config.width, config.height, config.diagonal_prob)
         self.active_piece: Tetromino | None = None
         self.next_shape_name: str | None = None
         self.next_color_id: int | None = None
@@ -145,13 +145,13 @@ class SandtrisEngine:
             if self.combo_timer_ms == 0.0:
                 self.combo = 1
 
-        cleared_pixels = self.grid.check_line_clears()
+        cleared_pixels, connections = self.grid.check_line_clears()
         if cleared_pixels > 0:
             self.pixels_cleared += cleared_pixels
-            self.score += cleared_pixels * self.combo
+            self.score += (250 * connections + cleared_pixels) * self.combo
             self.combo = min(10, self.combo + 1)
             self.max_combo = max(self.max_combo, self.combo)
             self.level = (self.score // 2000) + 1
-            self.combo_timer_ms = 3000.0
+            self.combo_timer_ms = max(500.0, 3000.0 / self.level)
             self.flash_cells = self.grid.last_cleared
             self.flash_timer_ms = 280.0
