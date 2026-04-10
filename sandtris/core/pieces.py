@@ -68,10 +68,16 @@ class Tetromino:
                         dark_color if is_edge else self.color
                     )
 
+        self._update_cell_coords()
+
+    def _update_cell_coords(self) -> None:
+        self._cell_rows, self._cell_cols = np.where(self.shape != 0)
+
     def rotate(self, times: int = 1) -> None:
         self.shape = np.rot90(self.shape, k=-times)
         self.color_matrix = np.rot90(self.color_matrix, k=-times)
         self.rotation = (self.rotation + times) % 4
+        self._update_cell_coords()
 
     def get_cells(self) -> list[tuple[int, int, int]]:
         cells = []

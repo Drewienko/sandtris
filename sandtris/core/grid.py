@@ -10,6 +10,7 @@ class Grid:
         self.diagonal_prob = diagonal_prob
         self.data = np.zeros((height, width), dtype=np.uint8)
         self.last_cleared: list[tuple[int, int]] = []
+        self._frame_parity: bool = False
 
     def is_occupied(self, x: int, y: int) -> bool:
         if x < 0 or x >= self.width or y >= self.height:
@@ -23,7 +24,10 @@ class Grid:
             self.data[y, x] = color_id
 
     def update_sand(self) -> None:
+        self._frame_parity = not self._frame_parity
+        pref_dir = 1 if self._frame_parity else -1
         xs = np.arange(self.width)
+
         for y in range(self.height - 2, -1, -1):
             row = self.data[y]
             if not row.any():
@@ -39,10 +43,9 @@ class Grid:
             if not remaining.any():
                 continue
 
-            dirs = np.random.randint(0, 2, self.width) * 2 - 1
             gate = np.random.random(self.width) < self.diagonal_prob
 
-            for dx in (dirs, -dirs):
+            for dx in (pref_dir, -pref_dir):
                 nx = xs + dx
                 in_bounds = (nx >= 0) & (nx < self.width)
                 nx_safe = np.where(in_bounds, nx, 0)
@@ -51,8 +54,6 @@ class Grid:
                     continue
                 srcs = np.where(can_move)[0]
                 tgts = nx_safe[srcs]
-                perm = np.random.permutation(len(srcs))
-                srcs, tgts = srcs[perm], tgts[perm]
                 _, first = np.unique(tgts, return_index=True)
                 srcs, tgts = srcs[first], tgts[first]
                 below[tgts] = row[srcs]
