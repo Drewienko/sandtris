@@ -61,21 +61,19 @@ class VsScreen:
         }
 
     def get_result_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
-        modal = pygame.Rect(0, 0, 320, 250)
+        modal = pygame.Rect(0, 0, 320, 290)
         modal.center = surface_rect.center
         margin = self.dims.modal_button_margin
-        step = self.dims.modal_button_step
         btn_h = self.dims.modal_button_height
+        gap = 10
+        btn_y = modal.bottom - margin - btn_h * 2 - gap
         return {
             "modal": modal,
             "restart": pygame.Rect(
-                modal.left + margin, modal.top + 140, modal.width - margin * 2, btn_h
+                modal.left + margin, btn_y, modal.width - margin * 2, btn_h
             ),
             "menu": pygame.Rect(
-                modal.left + margin,
-                modal.top + 140 + step,
-                modal.width - margin * 2,
-                btn_h,
+                modal.left + margin, btn_y + btn_h + gap, modal.width - margin * 2, btn_h
             ),
         }
 
@@ -113,6 +111,7 @@ class VsScreen:
         mouse_pos: tuple[int, int],
         mouse_down: bool,
         focused_idx: int = -1,
+        ai_dead: bool = False,
     ) -> None:
         surface.fill(self.theme.screen_bg)
         rect = surface.get_rect()
@@ -160,9 +159,15 @@ class VsScreen:
             layout["ai"],
             self.theme.panel_bg,
             self.theme.panel_border,
-            self.theme.accent_panel,
+            self.theme.panel_border,  # dimmed border when dead
         )
         self._blit_board(surface, ai_surf, layout["ai"])
+        if ai_dead:
+            dead_overlay = pygame.Surface(layout["ai"].size, pygame.SRCALPHA)
+            dead_overlay.fill((0, 0, 0, 160))
+            surface.blit(dead_overlay, layout["ai"].topleft)
+            dead_surf = self.title_font.render("AI LOST", True, self.theme.title_text)
+            surface.blit(dead_surf, dead_surf.get_rect(center=layout["ai"].center))
 
         draw_panel(
             surface,
@@ -208,7 +213,7 @@ class VsScreen:
             )
             result_surf = self.title_font.render(result, True, self.theme.title_text)
             surface.blit(
-                result_surf, result_surf.get_rect(center=(modal.centerx, modal.top + 46))
+                result_surf, result_surf.get_rect(center=(modal.centerx, modal.top + 52))
             )
             score_surf = self.body_font.render(
                 f"You: {player_score}    AI: {ai_score}",
@@ -217,7 +222,7 @@ class VsScreen:
             )
             surface.blit(
                 score_surf,
-                score_surf.get_rect(center=(modal.centerx, modal.top + 96)),
+                score_surf.get_rect(center=(modal.centerx, modal.top + 110)),
             )
             for idx, (key, btn) in enumerate(
                 [("restart", self.restart_button), ("menu", self.menu_button)]

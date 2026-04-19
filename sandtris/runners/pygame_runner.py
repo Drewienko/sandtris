@@ -22,6 +22,8 @@ from sandtris.render.ui import (
     build_color_palette,
 )
 from sandtris.render.vs_screen import VsScreen
+from sandtris.ai.base import Action, GameObservation
+from sandtris.ai.dqn_agent import DQNAgent
 
 # Try to get the window object for pygbag localStorage
 window = None
@@ -172,7 +174,9 @@ class PygameRunner:
         self.menu_focus: int = 0
         self._game_over_reloaded: bool = False
         self.ai_engine: SandtrisEngine | None = None
+        self.ai_agent: DQNAgent | None = None
         self.ai_piece_drop_accumulator_ms: float = 0.0
+        self._ai_piece_ticks: int = 0
         self.vs_result: str | None = None
 
         if not self.config.headless:
@@ -479,6 +483,24 @@ class PygameRunner:
         self.lock_timer_ai_ms = 0.0
         self.vs_result = None
         self.menu_focus = 0
+
+        # prefer scale8 final, then latest numbered checkpoint
+        _candidates = [
+            Path("models/scale8BFS/dqn_final.pt"),
+            Path("models/scale8/dqn_final.pt"),
+            Path("models/dqn_final.pt"),
+            *sorted(Path("models").glob("dqn_[0-9]*.pt")),
+        ]
+        model_path = next((p for p in _candidates if p.exists()), None)
+        if model_path is not None:
+            try:
+                self.ai_agent = DQNAgent(model_path)
+                self.ai_agent.reset()
+            except Exception:
+                self.ai_agent = None
+        else:
+            self.ai_agent = None
+
         self._restart_game()
         self.state = GameState.PLAYER_VS_AI
 
@@ -525,7 +547,10 @@ class PygameRunner:
                     self.menu_focus = 0
                     return
                 if self.vs_view.quit_button_contains(screen_rect, event.pos):
-                    self.state = GameState.MAIN_MENU
+                    self.engine.game_over = True
+                    self.vs_result = (
+                        "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
+                    )
                     self.menu_focus = 0
                     return
 
@@ -666,6 +691,7 @@ class PygameRunner:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
             screen_rect = self.screen.get_rect()
+            _show_vs = window is None
             if self.main_menu_view.yes_button_contains(screen_rect, event.pos):
                 self.running = False
             elif self.main_menu_view.no_button_contains(
@@ -673,18 +699,20 @@ class PygameRunner:
             ):
                 self.main_menu_view.confirming_quit = False
             elif self.main_menu_view.play_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, _show_vs
             ):
                 self._restart_game()
                 self.state = GameState.PLAYING
-            elif self.main_menu_view.vs_button_contains(screen_rect, event.pos):
+            elif self.main_menu_view.vs_button_contains(
+                screen_rect, event.pos, _show_vs
+            ):
                 self._start_vs_game()
             elif self.main_menu_view.settings_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, _show_vs
             ):
                 self._open_settings()
             elif self.main_menu_view.scores_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, _show_vs
             ):
                 loaded = load_persistent_data(
                     "sandtris_highscore", self.high_score_path
@@ -694,12 +722,12 @@ class PygameRunner:
                 )
                 self.state = GameState.HIGH_SCORES
             elif self.main_menu_view.help_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, _show_vs
             ):
                 self.previous_state = GameState.MAIN_MENU
                 self.state = GameState.HOW_TO_PLAY
             elif self.main_menu_view.quit_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, _show_vs
             ):
                 self.main_menu_view.confirming_quit = True
 
@@ -720,34 +748,41 @@ class PygameRunner:
                 elif event.key in self.config.key_up:
                     self.menu_focus = (self.menu_focus - 1) % 2
                 return
+            _show_vs = window is None
+            _n_items = 6 if _show_vs else 5
             if event.key in self.config.key_down:
-                self.menu_focus = (self.menu_focus + 1) % 6
+                self.menu_focus = (self.menu_focus + 1) % _n_items
             elif event.key in self.config.key_up:
-                self.menu_focus = (self.menu_focus - 1) % 6
+                self.menu_focus = (self.menu_focus - 1) % _n_items
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                if self.menu_focus == 0:
+                # indices: play=0, [vs=1,] settings, scores, help, quit
+                idx = self.menu_focus
+                if idx == 0:
                     self._restart_game()
                     self.state = GameState.PLAYING
-                elif self.menu_focus == 1:
+                elif _show_vs and idx == 1:
                     self._start_vs_game()
-                elif self.menu_focus == 2:
-                    self._open_settings()
-                elif self.menu_focus == 3:
-                    loaded = load_persistent_data(
-                        "sandtris_highscore", self.high_score_path
-                    )
-                    self._cached_high_score = (
-                        loaded if isinstance(loaded, list) else []
-                    )
-                    self.state = GameState.HIGH_SCORES
-                    self.menu_focus = 0
-                elif self.menu_focus == 4:
-                    self.previous_state = GameState.MAIN_MENU
-                    self.state = GameState.HOW_TO_PLAY
-                    self.menu_focus = 0
-                elif self.menu_focus == 5:
-                    self.main_menu_view.confirming_quit = True
-                    self.menu_focus = 1
+                else:
+                    offset = 2 if _show_vs else 1
+                    rel = idx - offset
+                    if rel == 0:
+                        self._open_settings()
+                    elif rel == 1:
+                        loaded = load_persistent_data(
+                            "sandtris_highscore", self.high_score_path
+                        )
+                        self._cached_high_score = (
+                            loaded if isinstance(loaded, list) else []
+                        )
+                        self.state = GameState.HIGH_SCORES
+                        self.menu_focus = 0
+                    elif rel == 2:
+                        self.previous_state = GameState.MAIN_MENU
+                        self.state = GameState.HOW_TO_PLAY
+                        self.menu_focus = 0
+                    elif rel == 3:
+                        self.main_menu_view.confirming_quit = True
+                        self.menu_focus = 1
 
     def _handle_playing_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -973,7 +1008,7 @@ class PygameRunner:
                     self.ai_piece_drop_accumulator_ms = 0.0
             else:
                 self.ai_piece_drop_accumulator_ms += dt_ms
-                ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0
+                ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0 / 6
                 while self.ai_piece_drop_accumulator_ms >= ai_interval:
                     self.ai_piece_drop_accumulator_ms -= ai_interval
                     if self.ai_engine.active_piece:
@@ -991,17 +1026,49 @@ class PygameRunner:
             self.engine.tick(sand_interval)
             self.ai_engine.tick(sand_interval)
 
-        p_over = self.engine.game_over
-        a_over = self.ai_engine.game_over
-        if p_over or a_over:
-            if p_over and a_over:
-                self.vs_result = (
-                    "YOU WIN!" if self.engine.score >= self.ai_engine.score else "AI WINS!"
+            if self.ai_engine.active_piece and not self.pending_lock_ai:
+                self._ai_piece_ticks += 1
+
+            # agent decides every 3rd sand tick (~10hz)
+            if (
+                self.ai_agent is not None
+                and self.ai_engine.active_piece
+                and not self.ai_engine.game_over
+                and not self.pending_lock_ai
+                and self._ai_piece_ticks % 3 == 0
+            ):
+                piece = self.ai_engine.active_piece
+                obs = GameObservation(
+                    grid=self.ai_engine.grid.data.copy(),
+                    piece_shape=piece.name,
+                    piece_color=piece.color,
+                    piece_x=piece.x,
+                    piece_y=piece.y,
+                    piece_rotation=piece.rotation,
+                    next_shape=self.ai_engine.next_shape_name,
+                    next_color=self.ai_engine.next_color_id or 0,
+                    score=self.ai_engine.score,
+                    level=self.ai_engine.level,
+                    game_over=self.ai_engine.game_over,
                 )
-            elif p_over:
-                self.vs_result = "AI WINS!"
-            else:
-                self.vs_result = "YOU WIN!"
+                action = self.ai_agent.decide(obs)
+                if action == Action.MOVE_LEFT:
+                    self.ai_engine.move_active_piece(-1, 0)
+                elif action == Action.MOVE_RIGHT:
+                    self.ai_engine.move_active_piece(1, 0)
+                elif action == Action.ROTATE:
+                    self.ai_engine.rotate_active_piece()
+                elif action == Action.HARD_DROP:
+                    while self.ai_engine.move_active_piece(0, 1):
+                        pass
+                    self.pending_lock_ai = True
+                    self.lock_timer_ai_ms = self.config.lock_delay_ms
+
+        p_over = self.engine.game_over
+        if p_over:
+            self.vs_result = (
+                "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
+            )
             self.menu_focus = 0
 
     _DAS_DELAY_MS = 150.0
@@ -1132,6 +1199,7 @@ class PygameRunner:
                 pygame.mouse.get_pos(),
                 self.mouse_down,
                 self.menu_focus,
+                show_vs=window is None,
             )
             pygame.display.flip()
             return
@@ -1180,6 +1248,7 @@ class PygameRunner:
                     pygame.mouse.get_pos(),
                     self.mouse_down,
                     self.menu_focus,
+                    ai_dead=self.ai_engine.game_over,
                 )
                 if self.paused:
                     self.pause_view.draw(

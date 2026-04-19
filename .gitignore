@@ -16,3 +16,9 @@ DQN.md
 
 # Runtime data
 data/*.json
+
+# Trained models (large binary files)
+models/**
+!models/scale8BFS/
+!models/scale8BFS/dqn_final.pt
+dqnNotes.md

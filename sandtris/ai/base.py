@@ -19,10 +19,12 @@ class GameObservation:
         np.ndarray
     )  # shape (height, width), dtype uint8 — copy of engine.grid.data
     piece_shape: str | None  # piece.name
+    piece_color: int          # piece color ID 1-7
     piece_x: int
     piece_y: int
     piece_rotation: int
     next_shape: str | None
+    next_color: int           # next piece color ID 1-7
     score: int
     level: int
     game_over: bool

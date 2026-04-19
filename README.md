@@ -4,6 +4,14 @@
 
 Tetris + falling sand physics. Pieces dissolve into sand particles on lock. Clear lines by connecting same-color sand from the left wall to the right wall.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/menu.png" width="280" alt="Main menu"/>
+  <img src="screenshots/gameplay.png" width="280" alt="Gameplay"/>
+  <img src="screenshots/vs_ai.png" width="280" alt="VS AI"/>
+</p>
+
 ## Play
 
 - **Browser:** [Drewienko.github.io/sandtris](https://Drewienko.github.io/sandtris/)
@@ -31,23 +39,7 @@ uv run sandtris
 
 ## AI
 
-`SandtrisEnv` in `sandtris/ai/env.py` exposes a Gym-like interface for training agents.
-
-```python
-from sandtris.ai.env import SandtrisEnv
-from sandtris.ai.base import Action
-
-env = SandtrisEnv()
-obs = env.reset()
-obs, reward, done = env.step(Action.HARD_DROP)
-```
-
-Train a DQN agent:
-```bash
-uv run sandtris-train
-```
-
-See [DQN.md](DQN.md) for architecture and training details.
+The VS AI mode is available in the desktop build. The DQN agent is a work in progress — it can survive for a while but line clears are still unreliable.
 
 ## Dev
 

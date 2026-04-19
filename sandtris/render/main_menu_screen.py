@@ -30,7 +30,9 @@ class MainMenuScreen:
         self.no_button = PixelButton("NO")
         self.confirming_quit = False
 
-    def get_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
+    def get_layout(
+        self, surface_rect: pygame.Rect, show_vs: bool = True
+    ) -> dict[str, pygame.Rect]:
         btn_h = self.dims.modal_button_height
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
@@ -49,90 +51,65 @@ class MainMenuScreen:
                 ),
             }
 
-        panel = pygame.Rect(0, 0, 320, 480)
+        n_buttons = 6 if show_vs else 5
+        panel_h = 100 + step * n_buttons + 20
+        panel = pygame.Rect(0, 0, 320, panel_h)
         panel.center = surface_rect.center
 
-        return {
-            "panel": panel,
-            "play": pygame.Rect(
+        layout: dict[str, pygame.Rect] = {"panel": panel}
+        buttons = ["play", "settings", "scores", "help", "quit"]
+        if show_vs:
+            buttons.insert(1, "vs")
+        for i, key in enumerate(buttons):
+            layout[key] = pygame.Rect(
                 panel.left + margin,
-                panel.top + 100,
+                panel.top + 100 + step * i,
                 panel.width - margin * 2,
                 btn_h,
-            ),
-            "vs": pygame.Rect(
-                panel.left + margin,
-                panel.top + 100 + step,
-                panel.width - margin * 2,
-                btn_h,
-            ),
-            "settings": pygame.Rect(
-                panel.left + margin,
-                panel.top + 100 + step * 2,
-                panel.width - margin * 2,
-                btn_h,
-            ),
-            "scores": pygame.Rect(
-                panel.left + margin,
-                panel.top + 100 + step * 3,
-                panel.width - margin * 2,
-                btn_h,
-            ),
-            "help": pygame.Rect(
-                panel.left + margin,
-                panel.top + 100 + step * 4,
-                panel.width - margin * 2,
-                btn_h,
-            ),
-            "quit": pygame.Rect(
-                panel.left + margin,
-                panel.top + 100 + step * 5,
-                panel.width - margin * 2,
-                btn_h,
-            ),
-        }
+            )
+        return layout
 
     def play_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
         if self.confirming_quit:
             return False
-        return self.get_layout(surface_rect)["play"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["play"].collidepoint(pos)
 
     def vs_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
-        if self.confirming_quit:
+        if self.confirming_quit or not show_vs:
             return False
-        return self.get_layout(surface_rect)["vs"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["vs"].collidepoint(pos)
 
     def settings_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
         if self.confirming_quit:
             return False
-        return self.get_layout(surface_rect)["settings"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["settings"].collidepoint(pos)
 
     def scores_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
         if self.confirming_quit:
             return False
-        return self.get_layout(surface_rect)["scores"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["scores"].collidepoint(pos)
 
     def help_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
         if self.confirming_quit:
             return False
-        return self.get_layout(surface_rect)["help"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["help"].collidepoint(pos)
 
     def quit_button_contains(
-        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+        self, surface_rect: pygame.Rect, pos: tuple[int, int], show_vs: bool = True
     ) -> bool:
         if self.confirming_quit:
             return False
-        return self.get_layout(surface_rect)["quit"].collidepoint(pos)
+        return self.get_layout(surface_rect, show_vs)["quit"].collidepoint(pos)
 
     def yes_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
@@ -154,10 +131,11 @@ class MainMenuScreen:
         mouse_pos: tuple[int, int],
         mouse_down: bool,
         focused_idx: int = -1,
+        show_vs: bool = True,
     ) -> None:
         surface.fill(self.theme.screen_bg)
 
-        layout = self.get_layout(surface.get_rect())
+        layout = self.get_layout(surface.get_rect(), show_vs)
         panel = layout["panel"]
 
         draw_panel(
@@ -194,14 +172,16 @@ class MainMenuScreen:
             )
             return
 
-        for idx, (key, btn) in enumerate([
+        all_buttons = [
             ("play", self.play_button),
             ("vs", self.vs_button),
             ("settings", self.settings_button),
             ("scores", self.scores_button),
             ("help", self.help_button),
             ("quit", self.quit_button),
-        ]):
+        ]
+        visible = [(k, b) for k, b in all_buttons if k != "vs" or show_vs]
+        for idx, (key, btn) in enumerate(visible):
             mouse_hov = layout[key].collidepoint(mouse_pos)
             hov = mouse_hov or focused_idx == idx
             btn.draw(surface, layout[key], self.body_font, self.theme,
