@@ -23,7 +23,6 @@ from sandtris.render.ui import (
 )
 from sandtris.render.vs_screen import VsScreen
 from sandtris.ai.base import Action, GameObservation
-from sandtris.ai.dqn_agent import DQNAgent
 
 # Try to get the window object for pygbag localStorage
 window = None
@@ -174,7 +173,7 @@ class PygameRunner:
         self.menu_focus: int = 0
         self._game_over_reloaded: bool = False
         self.ai_engine: SandtrisEngine | None = None
-        self.ai_agent: DQNAgent | None = None
+        self.ai_agent = None
         self.ai_piece_drop_accumulator_ms: float = 0.0
         self._ai_piece_ticks: int = 0
         self.vs_result: str | None = None
@@ -494,6 +493,7 @@ class PygameRunner:
         model_path = next((p for p in _candidates if p.exists()), None)
         if model_path is not None:
             try:
+                from sandtris.ai.dqn_agent import DQNAgent
                 self.ai_agent = DQNAgent(model_path)
                 self.ai_agent.reset()
             except Exception:
