@@ -22,7 +22,8 @@ from sandtris.render.ui import (
     build_color_palette,
 )
 from sandtris.render.vs_screen import VsScreen
-from sandtris.ai.base import Action, GameObservation
+from sandtris.ai.base import GameObservation
+from sandtris.ai.env import compute_placements
 
 # Try to get the window object for pygbag localStorage
 window = None
@@ -51,7 +52,7 @@ def load_persistent_data(key: str, fallback_path: Path) -> dict:
     return {}
 
 
-def save_persistent_data(key: str, fallback_path: Path, data: dict) -> None:
+def save_persistent_data(key: str, fallback_path: Path, data: dict | list) -> None:
     json_str = json.dumps(data, indent=2)
     if window:
         try:
@@ -234,6 +235,7 @@ class PygameRunner:
         self.lock_timer_ms = 0.0
         self.pending_lock_ai = False
         self.lock_timer_ai_ms = 0.0
+        self._ai_has_decided: bool = False
         self._das_left_ms: float = 0.0
         self._das_right_ms: float = 0.0
 
@@ -249,6 +251,7 @@ class PygameRunner:
             return
         width = max(720, int(window.innerWidth))
         height = max(900, int(window.innerHeight))
+        assert self.screen is not None
         if self.screen.get_size() != (width, height):
             self.screen = pygame.display.set_mode(
                 (width, height), pygame.RESIZABLE
@@ -408,6 +411,7 @@ class PygameRunner:
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             screen_rect = self.screen.get_rect()
             if self.settings_view.name_field_contains(screen_rect, event.pos):
                 self.settings_view.name_field_active = True
@@ -480,15 +484,13 @@ class PygameRunner:
         self.ai_piece_drop_accumulator_ms = 0.0
         self.pending_lock_ai = False
         self.lock_timer_ai_ms = 0.0
+        self._ai_has_decided = False
         self.vs_result = None
         self.menu_focus = 0
 
-        # prefer scale8 final, then latest numbered checkpoint
         _candidates = [
-            Path("models/scale8BFS/dqn_final.pt"),
-            Path("models/scale8/dqn_final.pt"),
             Path("models/dqn_final.pt"),
-            *sorted(Path("models").glob("dqn_[0-9]*.pt")),
+            *sorted(Path("models").glob("dqn_[0-9]*.pt"), reverse=True),
         ]
         model_path = next((p for p in _candidates if p.exists()), None)
         if model_path is not None:
@@ -496,7 +498,9 @@ class PygameRunner:
                 from sandtris.ai.dqn_agent import DQNAgent
                 self.ai_agent = DQNAgent(model_path)
                 self.ai_agent.reset()
-            except Exception:
+                print(f"AI loaded: {model_path}")
+            except Exception as e:
+                print(f"AI load failed ({model_path}): {e}")
                 self.ai_agent = None
         else:
             self.ai_agent = None
@@ -507,6 +511,7 @@ class PygameRunner:
     def _handle_vs_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             screen_rect = self.screen.get_rect()
             if self.vs_result is not None:
                 if self.vs_view.restart_button_contains(screen_rect, event.pos):
@@ -548,6 +553,7 @@ class PygameRunner:
                     return
                 if self.vs_view.quit_button_contains(screen_rect, event.pos):
                     self.engine.game_over = True
+                    assert self.ai_engine is not None
                     self.vs_result = (
                         "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
                     )
@@ -661,6 +667,7 @@ class PygameRunner:
     def _handle_how_to_play_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             screen_rect = self.screen.get_rect()
             if self.how_to_play_view.back_button_contains(
                 screen_rect, event.pos
@@ -676,6 +683,7 @@ class PygameRunner:
     def _handle_high_scores_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             if self.high_scores_view.back_button_contains(
                 self.screen.get_rect(), event.pos
             ):
@@ -690,6 +698,7 @@ class PygameRunner:
     def _handle_main_menu_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             screen_rect = self.screen.get_rect()
             _show_vs = window is None
             if self.main_menu_view.yes_button_contains(screen_rect, event.pos):
@@ -787,6 +796,7 @@ class PygameRunner:
     def _handle_playing_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.mouse_down = True
+            assert self.screen is not None
             screen_rect = self.screen.get_rect()
 
             if self.engine.game_over:
@@ -1005,7 +1015,11 @@ class PygameRunner:
                 if self.lock_timer_ai_ms <= 0:
                     self.pending_lock_ai = False
                     self.ai_engine.lock_piece()
+                    settle = self.ai_agent.settle_ticks if self.ai_agent else 0
+                    for _ in range(settle):
+                        self.ai_engine.grid.update_sand()
                     self.ai_piece_drop_accumulator_ms = 0.0
+                    self._ai_has_decided = False
             else:
                 self.ai_piece_drop_accumulator_ms += dt_ms
                 ai_interval = (self.config.fall_delay / self.config.fps) * 1000.0 / 6
@@ -1026,16 +1040,13 @@ class PygameRunner:
             self.engine.tick(sand_interval)
             self.ai_engine.tick(sand_interval)
 
-            if self.ai_engine.active_piece and not self.pending_lock_ai:
-                self._ai_piece_ticks += 1
-
-            # agent decides every 3rd sand tick (~10hz)
+            # decide once per piece on spawn, apply full placement instantly
             if (
                 self.ai_agent is not None
-                and self.ai_engine.active_piece
+                and self.ai_engine.active_piece is not None
                 and not self.ai_engine.game_over
                 and not self.pending_lock_ai
-                and self._ai_piece_ticks % 3 == 0
+                and not self._ai_has_decided
             ):
                 piece = self.ai_engine.active_piece
                 obs = GameObservation(
@@ -1051,18 +1062,17 @@ class PygameRunner:
                     level=self.ai_engine.level,
                     game_over=self.ai_engine.game_over,
                 )
-                action = self.ai_agent.decide(obs)
-                if action == Action.MOVE_LEFT:
-                    self.ai_engine.move_active_piece(-1, 0)
-                elif action == Action.MOVE_RIGHT:
-                    self.ai_engine.move_active_piece(1, 0)
-                elif action == Action.ROTATE:
-                    self.ai_engine.rotate_active_piece()
-                elif action == Action.HARD_DROP:
+                placements = compute_placements(self.ai_engine)
+                if placements:
+                    idx = self.ai_agent.decide(obs, len(placements))
+                    rot, col = placements[idx]
+                    piece.rotate(times=rot)
+                    piece.x = col
                     while self.ai_engine.move_active_piece(0, 1):
                         pass
                     self.pending_lock_ai = True
                     self.lock_timer_ai_ms = self.config.lock_delay_ms
+                self._ai_has_decided = True
 
         p_over = self.engine.game_over
         if p_over:
@@ -1193,6 +1203,7 @@ class PygameRunner:
         if self.config.headless:
             return
 
+        assert self.screen is not None
         if self.state == GameState.MAIN_MENU:
             self.main_menu_view.draw(
                 self.screen,

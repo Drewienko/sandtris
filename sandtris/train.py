@@ -2,7 +2,8 @@
 
 Usage:
     uv run sandtris-train
-    uv run sandtris-train --steps 500000 --scale 8 --out models/
+    uv run sandtris-train --steps 500000 --scale 4 --out models/
+    uv run sandtris-train --steps 500000 --reach-variant max_span avg_span surface_span
 """
 
 from __future__ import annotations
@@ -15,28 +16,25 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from sandtris.ai.dqn import (
-    N_ACTIONS,
-    TRAIN_ACTIONS,
-    SandtrisNet,
-    obs_to_arrays,
-)
-from sandtris.ai.env import SandtrisEnv
-from sandtris.ai.replay import ReplayBuffer, Transition
+from sandtris.ai.dqn import SandtrisNet, obs_to_arrays
+from sandtris.ai.replay import NStepBuffer, ReplayBuffer, Transition
+from sandtris.ai.vec_env import VecSandtrisEnv
 from sandtris.core.config import GameConfig
 
 # --- hyperparameters ---
 GAMMA = 0.99
+N_STEP = 5
+GAMMA_N = GAMMA ** N_STEP   # discount on bootstrap in n-step target
 LR = 1e-4
 BATCH_SIZE = 32
 BUFFER_SIZE = 100_000
 TRAIN_START = 1_000
-TRAIN_EVERY = 4      # env steps between each gradient update
+TRAIN_EVERY = 4       # env steps between each gradient update
 TARGET_SYNC = 1_000
 EPS_START = 1.0
 EPS_END = 0.05
 EPS_DECAY = 0.999990
-LOG_EVERY = 10       # episodes
+LOG_EVERY = 10        # episodes
 SAVE_EVERY = 100_000  # steps
 
 
@@ -48,116 +46,166 @@ def parse_args() -> argparse.Namespace:
                    help="replay buffer capacity (default: 100k for scale≤4, 25k for scale>4)")
     p.add_argument("--out", type=Path, default=Path("models"))
     p.add_argument("--resume", type=Path, default=None,
-                   help="checkpoint .pt to resume from")
+                   help="checkpoint .pt to resume from (single-variant only)")
+    p.add_argument(
+        "--reach-variant",
+        nargs="+",
+        default=["max_span"],
+        choices=["max_span", "avg_span", "surface_span"],
+        dest="reach_variants",
+        metavar="VARIANT",
+    )
+    p.add_argument(
+        "--settle-ticks", type=int, default=0,
+        help="grid.update_sand() calls after each lock before env tick (0=off)",
+    )
+    p.add_argument("--n-envs", type=int, default=1,
+                   help="parallel envs (uses threads; GIL released during numpy physics)")
     return p.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"device={device}  scale={args.scale}  steps={args.steps:,}")
+def run_training(
+    variant: str,
+    config: GameConfig,
+    out_dir: Path,
+    args: argparse.Namespace,
+    device: torch.device,
+) -> None:
+    """Train one DQN run for args.steps steps, saving checkpoints to out_dir."""
+    n_envs = args.n_envs
+    print(f"\n{'=' * 60}")
+    print(
+        f"variant={variant}  steps={args.steps:,}  scale={config.scale}  "
+        f"n_envs={n_envs}  settle={args.settle_ticks}  out={out_dir}"
+    )
+    print(f"{'=' * 60}")
 
-    args.out.mkdir(exist_ok=True)
-
-    config = GameConfig(scale=args.scale, lock_delay_ms=0, headless=True)
-    env = SandtrisEnv(config)
+    vec_env = VecSandtrisEnv(
+        n_envs, config, reach_variant=variant, settle_ticks=args.settle_ticks
+    )
+    nstep_bufs = [NStepBuffer(n=N_STEP, gamma=GAMMA) for _ in range(n_envs)]
 
     online = SandtrisNet().to(device)
     target = SandtrisNet().to(device)
 
     if args.resume:
-        online.load_state_dict(torch.load(args.resume, map_location=device))
-        print(f"resumed from {args.resume}")
+        if len(args.reach_variants) > 1:
+            print("warning: --resume ignored for multi-variant runs")
+        else:
+            ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+            sd = ckpt["state_dict"] if isinstance(ckpt, dict) else ckpt
+            online.load_state_dict(sd)
+            print(f"resumed from {args.resume}")
 
     target.load_state_dict(online.state_dict())
     target.eval()
 
     optimizer = torch.optim.Adam(online.parameters(), lr=LR)
-    buf_size = args.buffer_size or (BUFFER_SIZE if args.scale <= 4 else 25_000)
-    print(f"buffer={buf_size:,}  (~{buf_size * args.scale**2 * 2 // 1024 // 1024} MB)")
+    buf_size = args.buffer_size or (BUFFER_SIZE if config.scale <= 4 else 25_000)
+    print(f"buffer={buf_size:,}  (~{buf_size * config.scale**2 * 2 // 1024 // 1024} MB)")
     buffer = ReplayBuffer(buf_size)
 
     eps = EPS_START
-    obs = env.reset()
-    episode_reward = 0.0
-    episode_steps = 0
+    obses = vec_env.reset()
+    ep_rewards = [0.0] * n_envs
+    ep_steps_list = [0] * n_envs
     episode = 0
     total_clears = 0
+    step = 0
     t0 = time.perf_counter()
 
-    for step in range(1, args.steps + 1):
-        # --- select action ---
-        if random.random() < eps:
-            action_idx = random.randrange(N_ACTIONS)
-        else:
-            online.eval()
-            with torch.no_grad():
-                action_idx = online.act(obs, device)
-            online.train()
-        eps = max(EPS_END, eps * EPS_DECAY)
+    while step < args.steps:
+        # --- select actions (one forward pass for all envs) ---
+        greedy = online.act_batch(obses, vec_env.n_placements, device)
+        actions = [
+            random.randrange(n) if random.random() < eps else g
+            for g, n in zip(greedy, vec_env.n_placements)
+        ]
+        for _ in range(n_envs):
+            eps = max(EPS_END, eps * EPS_DECAY)
 
-        # --- env step ---
-        prev_score = obs.score
-        next_obs, reward, done = env.step(TRAIN_ACTIONS[action_idx])
-        if next_obs.score > prev_score:
-            total_clears += 1
-        episode_reward += reward
-        episode_steps += 1
+        # --- step all envs in parallel ---
+        results = vec_env.step(actions)
 
-        grid, piece_info = obs_to_arrays(obs)
-        next_grid, next_piece_info = obs_to_arrays(next_obs)
-        buffer.push(Transition(grid, piece_info, action_idx, reward,
-                               next_grid, next_piece_info, done))
+        for i, (next_obs, reward, done) in enumerate(results):
+            step += 1
+            if next_obs.score > obses[i].score:
+                total_clears += 1
+            ep_rewards[i] += reward
+            ep_steps_list[i] += 1
 
-        obs = env.reset() if done else next_obs
+            grid, piece_info = obs_to_arrays(obses[i])
+            next_grid, next_piece_info = obs_to_arrays(next_obs)
+            t = nstep_bufs[i].push(
+                Transition(grid, piece_info, actions[i], reward,
+                           next_grid, next_piece_info, done)
+            )
+            if t is not None:
+                buffer.push(t)
 
-        if done:
-            episode += 1
-            if episode % LOG_EVERY == 0:
-                sps = step / (time.perf_counter() - t0)
-                print(
-                    f"step={step:>8,}  ep={episode:>5}  "
-                    f"reward={episode_reward:>7.2f}  "
-                    f"steps/ep={episode_steps:>5}  "
-                    f"clears={total_clears:>6,}  "
-                    f"eps={eps:.3f}  sps={sps:>6.0f}"
-                )
-            episode_reward = 0.0
-            episode_steps = 0
+            if done:
+                episode += 1
+                if episode % LOG_EVERY == 0:
+                    elapsed = time.perf_counter() - t0
+                    sps = step / elapsed
+                    print(
+                        f"[{variant}] "
+                        f"step={step:>8,}  ep={episode:>5}  "
+                        f"reward={ep_rewards[i]:>7.2f}  "
+                        f"pieces/ep={ep_steps_list[i]:>5}  "
+                        f"clears={total_clears:>6,}  "
+                        f"eps={eps:.3f}  sps={sps:>6.0f}"
+                    )
+                ep_rewards[i] = 0.0
+                ep_steps_list[i] = 0
+                obses[i] = vec_env.reset_env(i)
+            else:
+                obses[i] = next_obs
 
-        # --- train ---
-        if len(buffer) >= TRAIN_START and step % TRAIN_EVERY == 0:
-            batch = buffer.sample(BATCH_SIZE, device)
+            # --- train ---
+            if len(buffer) >= TRAIN_START and step % TRAIN_EVERY == 0:
+                batch = buffer.sample(BATCH_SIZE, device)
 
-            # batch.states already (B, 7, H, W) — no unsqueeze needed
-            q_all = online(batch.states, batch.piece_infos)
-            q_sa = q_all.gather(1, batch.actions.unsqueeze(1)).squeeze(1)
+                q_all = online(batch.states, batch.piece_infos)
+                q_sa = q_all.gather(1, batch.actions.unsqueeze(1)).squeeze(1)
 
-            with torch.no_grad():
-                # Double DQN: online selects action, target evaluates it
-                best_actions = online(
-                    batch.next_states, batch.next_piece_infos
-                ).argmax(1, keepdim=True)
-                q_next = target(
-                    batch.next_states, batch.next_piece_infos
-                ).gather(1, best_actions).squeeze(1)
-                q_target = batch.rewards + GAMMA * q_next * ~batch.dones
+                with torch.no_grad():
+                    best_actions = online(
+                        batch.next_states, batch.next_piece_infos
+                    ).argmax(1, keepdim=True)
+                    q_next = target(
+                        batch.next_states, batch.next_piece_infos
+                    ).gather(1, best_actions).squeeze(1)
+                    q_target = batch.rewards + GAMMA_N * q_next * ~batch.dones
 
-            loss = F.mse_loss(q_sa, q_target)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+                loss = F.mse_loss(q_sa, q_target)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-        # --- sync target network ---
-        if step % TARGET_SYNC == 0:
-            target.load_state_dict(online.state_dict())
+            # --- sync target network ---
+            if step % TARGET_SYNC == 0:
+                target.load_state_dict(online.state_dict())
 
-        # --- checkpoint ---
-        if step % SAVE_EVERY == 0:
-            path = args.out / f"dqn_{step:08d}.pt"
-            torch.save(online.state_dict(), path)
-            print(f"saved {path}")
+            # --- checkpoint ---
+            if step % SAVE_EVERY == 0:
+                path = out_dir / f"dqn_{step:08d}.pt"
+                torch.save({"state_dict": online.state_dict(), "settle_ticks": args.settle_ticks}, path)
+                print(f"[{variant}] saved {path}")
 
-    final = args.out / "dqn_final.pt"
-    torch.save(online.state_dict(), final)
-    print(f"training done → {final}")
+    vec_env.close()
+    final = out_dir / "dqn_final.pt"
+    torch.save({"state_dict": online.state_dict(), "settle_ticks": args.settle_ticks}, final)
+    print(f"[{variant}] done → {final}")
+
+
+def main() -> None:
+    args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    config = GameConfig(scale=args.scale, lock_delay_ms=0, headless=True)
+    print(f"device={device}  scale={args.scale}  variants={args.reach_variants}")
+
+    for variant in args.reach_variants:
+        out_dir = args.out / variant
+        out_dir.mkdir(parents=True, exist_ok=True)
+        run_training(variant, config, out_dir, args, device)

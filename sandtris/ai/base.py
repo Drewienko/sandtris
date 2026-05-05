@@ -34,6 +34,6 @@ class AgentBase:
     def reset(self) -> None:
         """Called at the start of each game."""
 
-    def decide(self, obs: GameObservation) -> Action:
-        """Return the next action given the current observation."""
+    def decide(self, obs: GameObservation, n_placements: int = 320) -> int:
+        """Return placement index for the current observation."""
         raise NotImplementedError

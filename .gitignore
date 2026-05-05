@@ -13,12 +13,20 @@ wheels/
 CLAUDE.md
 CLAUDE_HCI.md
 DQN.md
+DQN_COOKBOOK.md
+DQN_IMPROVEMENTS.md
+CURR_DQN_STATE.md
+PYBIND11_PLAN.md
+MUSIC_PLAN.md
+.ignore
 
 # Runtime data
 data/*.json
+logs/
 
 # Trained models (large binary files)
-models/**
-!models/scale8BFS/
-!models/scale8BFS/dqn_final.pt
+models/
 dqnNotes.md
+
+# Scripts
+train_night.sh

@@ -13,7 +13,7 @@ from sandtris.ai.dqn import grids_to_tensor
 @dataclass(frozen=True, slots=True)
 class Transition:
     state: np.ndarray       # (H, W) uint8 — base color 0-7, compact storage
-    piece_info: np.ndarray  # (6,) float32
+    piece_info: np.ndarray  # (4,) float32 — [shape_id, rotation, color, next_color]
     action: int
     reward: float
     next_state: np.ndarray
@@ -24,12 +24,45 @@ class Transition:
 @dataclass(slots=True)
 class Batch:
     states: torch.Tensor       # (B, 7, H, W) float32
-    piece_infos: torch.Tensor  # (B, 6)
+    piece_infos: torch.Tensor  # (B, 4)
     actions: torch.Tensor      # (B,) long
     rewards: torch.Tensor      # (B,) float
     next_states: torch.Tensor  # (B, 7, H, W) float32
     next_piece_infos: torch.Tensor
     dones: torch.Tensor        # (B,) bool
+
+
+class NStepBuffer:
+    """Accumulates n transitions, folds rewards into a single n-step transition."""
+
+    def __init__(self, n: int = 5, gamma: float = 0.99) -> None:
+        self.n = n
+        self.gamma = gamma
+        self._buf: deque[Transition] = deque()
+
+    def push(self, transition: Transition) -> Transition | None:
+        self._buf.append(transition)
+        if transition.done:
+            result = self._flush_all()
+            self._buf.clear()
+            return result
+        if len(self._buf) < self.n:
+            return None
+        return self._flush_one()
+
+    def _fold(self, transitions: deque[Transition], done: bool) -> Transition:
+        G = sum(self.gamma**i * t.reward for i, t in enumerate(transitions))
+        t0, tn = transitions[0], transitions[-1]
+        return Transition(t0.state, t0.piece_info, t0.action, G,
+                          tn.next_state, tn.next_piece_info, done)
+
+    def _flush_one(self) -> Transition:
+        result = self._fold(self._buf, self._buf[-1].done)
+        self._buf.popleft()
+        return result
+
+    def _flush_all(self) -> Transition:
+        return self._fold(self._buf, True)
 
 
 class ReplayBuffer:
