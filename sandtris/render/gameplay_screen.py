@@ -37,6 +37,8 @@ class GameplayScreen:
         self.pause_button = PixelButton("PAUSE")
         self.help_button = PixelButton("?")
         self.skull_button = PixelButton("GIVE UP")
+        self._render_cache: dict[tuple, pygame.Surface] = {}
+        self._scaled_board_surf: pygame.Surface | None = None
 
     def get_layout(self, surface_rect: pygame.Rect) -> ScreenLayout:
         m = self.dims.margin
@@ -106,6 +108,14 @@ class GameplayScreen:
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
         return self.get_layout(surface_rect).skull_rect.collidepoint(pos)
+
+    def _cached_render(
+        self, font: pygame.font.Font, text: str, color: tuple
+    ) -> pygame.Surface:
+        key = (id(font), text, color)
+        if key not in self._render_cache:
+            self._render_cache[key] = font.render(text, True, color)
+        return self._render_cache[key]
 
     def _draw_next_preview(
         self,
@@ -202,27 +212,28 @@ class GameplayScreen:
         if cell_size > 0:
             render_w = board_w * cell_size
             render_h = board_h * cell_size
-            scaled_board = pygame.transform.scale(
-                board_surface, (render_w, render_h)
-            )
+            target = (render_w, render_h)
+            if self._scaled_board_surf is None or self._scaled_board_surf.get_size() != target:
+                self._scaled_board_surf = pygame.Surface(target, 0, 24)
+            pygame.transform.scale(board_surface, target, self._scaled_board_surf)
             center_x = board_inner.left + (board_inner.width - render_w) // 2
             center_y = board_inner.top + (board_inner.height - render_h) // 2
-            surface.blit(scaled_board, (center_x, center_y))
+            surface.blit(self._scaled_board_surf, (center_x, center_y))
 
-        title = self.title_font.render("SANDTRIS", True, self.theme.title_text)
+        title = self._cached_render(self.title_font, "SANDTRIS", self.theme.title_text)
         title_rect = title.get_rect(
             left=layout.hud_rect.left + 24, centery=layout.hud_rect.top + 32
         )
         surface.blit(title, title_rect)
 
-        score_text = self.body_font.render(
-            f"Score {score}", True, self.theme.body_text
+        score_text = self._cached_render(
+            self.body_font, f"Score {score}", self.theme.body_text
         )
-        level_text = self.body_font.render(
-            f"Level {level}", True, self.theme.body_text
+        level_text = self._cached_render(
+            self.body_font, f"Level {level}", self.theme.body_text
         )
-        combo_text = self.body_font.render(
-            f"Combo {combo}x", True, self.theme.body_text
+        combo_text = self._cached_render(
+            self.body_font, f"Combo {combo}x", self.theme.body_text
         )
         fps_text = self.body_font.render(
             f"FPS {fps}", True, self.theme.accent_text
@@ -273,7 +284,7 @@ class GameplayScreen:
             self.theme.panel_border,
             self.theme.panel_border_bright,
         )
-        next_title = self.body_font.render("NEXT", True, self.theme.title_text)
+        next_title = self._cached_render(self.body_font, "NEXT", self.theme.title_text)
         next_title_rect = next_title.get_rect(
             centerx=layout.next_rect.centerx, top=layout.next_rect.top + 20
         )

@@ -26,4 +26,4 @@ def test_config_rejects_non_positive_values(
     kwargs = {field_name: value}
 
     with pytest.raises(ValueError):
-        GameConfig(**kwargs)
+        GameConfig(**kwargs)  # type: ignore[arg-type]

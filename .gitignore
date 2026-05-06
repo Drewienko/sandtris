@@ -9,15 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
-# Local Claude context
+# Local-only files (notes, scripts, dev tools)
+local/
 CLAUDE.md
-CLAUDE_HCI.md
-DQN.md
-DQN_COOKBOOK.md
-DQN_IMPROVEMENTS.md
-CURR_DQN_STATE.md
-PYBIND11_PLAN.md
-MUSIC_PLAN.md
 .ignore
 
 # Runtime data
@@ -26,7 +20,3 @@ logs/
 
 # Trained models (large binary files)
 models/
-dqnNotes.md
-
-# Scripts
-train_night.sh

@@ -24,6 +24,8 @@ from sandtris.render.ui import (
 from sandtris.render.vs_screen import VsScreen
 from sandtris.ai.base import GameObservation
 from sandtris.ai.env import compute_placements
+from sandtris.core.event_bus import GameEventBus
+from sandtris.audio.sound_manager import SoundManager
 
 # Try to get the window object for pygbag localStorage
 window = None
@@ -179,6 +181,25 @@ class PygameRunner:
         self._ai_piece_ticks: int = 0
         self.vs_result: str | None = None
 
+        self.event_bus = GameEventBus()
+        if not self.config.headless:
+            try:
+                pygame.mixer.pre_init(44100, -16, 2, 512)
+                pygame.mixer.init()
+                self.sound = SoundManager()
+                self.sound.register(self.event_bus)
+                _music_path = (
+                    Path(__file__).parent.parent / "audio" / "music" / "theme.ogg"
+                )
+                if _music_path.exists():
+                    self.sound.load_music(str(_music_path))
+                    if not window:
+                        self.sound.start_music()
+            except Exception:
+                self.sound = None  # type: ignore[assignment]
+        else:
+            self.sound = None  # type: ignore[assignment]
+
         if not self.config.headless:
             if not window and os.environ.get("WAYLAND_DISPLAY"):
                 os.environ.setdefault("SDL_VIDEODRIVER", "wayland")
@@ -238,6 +259,17 @@ class PygameRunner:
         self._ai_has_decided: bool = False
         self._das_left_ms: float = 0.0
         self._das_right_ms: float = 0.0
+        self._player_board_surf: pygame.Surface | None = None
+        self._ai_board_surf: pygame.Surface | None = None
+        self._ghost_key: tuple | None = None
+        self._ghost_drop: int = 0
+        self._snd_prev_score: int = 0
+        self._snd_prev_combo: int = 1
+        self._snd_combo_active: bool = False
+        self._snd_game_over_fired: bool = False
+        self._snd_victory_fired: bool = False
+        self._vs_prev_level: int = 1
+        self._vs_level_up_timer_ms: float = 0.0
 
     def _initial_window_size(self) -> tuple[int, int]:
         if window:
@@ -268,6 +300,9 @@ class PygameRunner:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if self.sound and window:
+                    self.sound.start_music()
             elif event.type == pygame.VIDEORESIZE and not window:
                 if os.environ.get("SDL_VIDEODRIVER") == "wayland":
                     self.screen = pygame.display.get_surface()
@@ -407,6 +442,17 @@ class PygameRunner:
         self.lock_timer_ms = 0.0
         self._das_left_ms = 0.0
         self._das_right_ms = 0.0
+        self._ghost_key = None
+        self._ghost_drop = 0
+        self._snd_prev_score = 0
+        self._snd_prev_combo = 1
+        self._snd_combo_active = False
+        self._snd_game_over_fired = False
+        self._snd_victory_fired = False
+        self._vs_prev_level = 1
+        self._vs_level_up_timer_ms = 0.0
+        if not self.config.headless:
+            pygame.event.clear(pygame.KEYDOWN)
 
     def _handle_settings_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -454,23 +500,30 @@ class PygameRunner:
                 return
             if event.key in self.config.key_down:
                 self.menu_focus = (self.menu_focus + 1) % 4
+                self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_up:
                 self.menu_focus = (self.menu_focus - 1) % 4
+                self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_left:
                 if self.menu_focus == 1:
                     themes = list(THEME_PRESETS.keys())
                     self._apply_theme(themes[(themes.index(self.theme_name) - 1) % len(themes)])
+                    self.event_bus.emit("menu_nav")
                 elif self.menu_focus == 2:
                     palettes = list(SAND_PALETTE_PRESETS.keys())
                     self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) - 1) % len(palettes)])
+                    self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_right:
                 if self.menu_focus == 1:
                     themes = list(THEME_PRESETS.keys())
                     self._apply_theme(themes[(themes.index(self.theme_name) + 1) % len(themes)])
+                    self.event_bus.emit("menu_nav")
                 elif self.menu_focus == 2:
                     palettes = list(SAND_PALETTE_PRESETS.keys())
                     self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) + 1) % len(palettes)])
+                    self.event_bus.emit("menu_nav")
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.event_bus.emit("menu_select")
                 if self.menu_focus == 0:
                     self.settings_view.name_field_active = True
                 elif self.menu_focus == 3:
@@ -488,10 +541,11 @@ class PygameRunner:
         self.vs_result = None
         self.menu_focus = 0
 
-        _candidates = [
-            Path("models/dqn_final.pt"),
-            *sorted(Path("models").glob("dqn_[0-9]*.pt"), reverse=True),
-        ]
+        _candidates = sorted(
+            Path("models/testing").glob("*.pt"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         model_path = next((p for p in _candidates if p.exists()), None)
         if model_path is not None:
             try:
@@ -547,6 +601,10 @@ class PygameRunner:
                     self.pause_view.confirming_menu = True
                     return
             else:
+                if self.vs_view.help_button_contains(screen_rect, event.pos):
+                    self.previous_state = GameState.PLAYER_VS_AI
+                    self.state = GameState.HOW_TO_PLAY
+                    return
                 if self.vs_view.pause_button_contains(screen_rect, event.pos):
                     self.paused = True
                     self.menu_focus = 0
@@ -567,6 +625,7 @@ class PygameRunner:
             if event.key in self.config.key_pause:
                 if self.vs_result is None:
                     self.paused = not self.paused
+                    self.event_bus.emit("pause")
                     if not self.paused:
                         self.pause_view.confirming_restart = False
                         self.pause_view.confirming_menu = False
@@ -630,27 +689,31 @@ class PygameRunner:
 
             if event.key in self.config.key_left:
                 moved = self.engine.move_active_piece(-1, 0)
-                if moved and self.pending_lock:
-                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
-                        self.pending_lock = False
-                    else:
-                        self.lock_timer_ms = self.config.lock_delay_ms
+                if moved:
+                    if self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_right:
                 moved = self.engine.move_active_piece(1, 0)
-                if moved and self.pending_lock:
-                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
-                        self.pending_lock = False
-                    else:
-                        self.lock_timer_ms = self.config.lock_delay_ms
+                if moved:
+                    if self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
+                self.event_bus.emit("rotate")
                 if self.pending_lock:
                     self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
                 while self.engine.move_active_piece(0, 1):
                     pass
+                self.event_bus.emit("hard_drop")
                 self.pending_lock = True
-                self.lock_timer_ms = self.config.lock_delay_ms
+                self.lock_timer_ms = 0.0
                 self.piece_drop_accumulator_ms = 0
                 self.fast_dropping = False
                 self.current_fall_delay = self.config.fall_delay
@@ -761,9 +824,12 @@ class PygameRunner:
             _n_items = 6 if _show_vs else 5
             if event.key in self.config.key_down:
                 self.menu_focus = (self.menu_focus + 1) % _n_items
+                self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_up:
                 self.menu_focus = (self.menu_focus - 1) % _n_items
+                self.event_bus.emit("menu_nav")
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.event_bus.emit("menu_select")
                 # indices: play=0, [vs=1,] settings, scores, help, quit
                 idx = self.menu_focus
                 if idx == 0:
@@ -880,6 +946,7 @@ class PygameRunner:
             if event.key in self.config.key_pause:
                 if not self.engine.game_over:
                     self.paused = not self.paused
+                    self.event_bus.emit("pause")
                     if not self.paused:
                         self.pause_view.confirming_restart = False
                         self.pause_view.confirming_menu = False
@@ -954,27 +1021,31 @@ class PygameRunner:
 
             if event.key in self.config.key_left:
                 moved = self.engine.move_active_piece(-1, 0)
-                if moved and self.pending_lock:
-                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
-                        self.pending_lock = False
-                    else:
-                        self.lock_timer_ms = self.config.lock_delay_ms
+                if moved:
+                    if self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_right:
                 moved = self.engine.move_active_piece(1, 0)
-                if moved and self.pending_lock:
-                    if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
-                        self.pending_lock = False
-                    else:
-                        self.lock_timer_ms = self.config.lock_delay_ms
+                if moved:
+                    if self.pending_lock:
+                        if self.engine.active_piece and not self.engine._check_collision_at(self.engine.active_piece, 0, 1):
+                            self.pending_lock = False
+                        else:
+                            self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_up:
                 self.engine.rotate_active_piece()
+                self.event_bus.emit("rotate")
                 if self.pending_lock:
                     self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
                 while self.engine.move_active_piece(0, 1):
                     pass
+                self.event_bus.emit("hard_drop")
                 self.pending_lock = True
-                self.lock_timer_ms = self.config.lock_delay_ms
+                self.lock_timer_ms = 0.0
                 self.piece_drop_accumulator_ms = 0
                 self.fast_dropping = False
                 self.current_fall_delay = self.config.fall_delay
@@ -993,6 +1064,7 @@ class PygameRunner:
                 if self.lock_timer_ms <= 0:
                     self.pending_lock = False
                     self.engine.lock_piece()
+                    self.event_bus.emit("lock")
                     self.fast_dropping = False
                     self.current_fall_delay = self.config.fall_delay
                     self.piece_drop_accumulator_ms = 0.0
@@ -1015,9 +1087,6 @@ class PygameRunner:
                 if self.lock_timer_ai_ms <= 0:
                     self.pending_lock_ai = False
                     self.ai_engine.lock_piece()
-                    settle = self.ai_agent.settle_ticks if self.ai_agent else 0
-                    for _ in range(settle):
-                        self.ai_engine.grid.update_sand()
                     self.ai_piece_drop_accumulator_ms = 0.0
                     self._ai_has_decided = False
             else:
@@ -1074,8 +1143,35 @@ class PygameRunner:
                     self.lock_timer_ai_ms = self.config.lock_delay_ms
                 self._ai_has_decided = True
 
+        # VS score/combo sound tracking (player side only)
+        if self.engine.score != self._snd_prev_score:
+            connections = max(1, self.engine.combo - self._snd_prev_combo)
+            self.event_bus.emit("clear", connections=connections)
+            if self.engine.combo > 1:
+                self.event_bus.emit("combo", level=self.engine.combo)
+            self._snd_prev_score = self.engine.score
+        if self.engine.combo_timer_ms > 0:
+            self._snd_combo_active = True
+        elif self._snd_combo_active and self.engine.combo == 1:
+            self._snd_combo_active = False
+            self.event_bus.emit("combo_expire")
+        self._snd_prev_combo = self.engine.combo
+
+        if self.engine.level > self._vs_prev_level:
+            self._vs_level_up_timer_ms = 2000.0
+            self._vs_prev_level = self.engine.level
+            self.event_bus.emit("level_up")
+        self._vs_level_up_timer_ms = max(0.0, self._vs_level_up_timer_ms - dt_ms)
+
+        if self.ai_engine.game_over and not self._snd_victory_fired:
+            self._snd_victory_fired = True
+            self.event_bus.emit("victory")
+
         p_over = self.engine.game_over
         if p_over:
+            if not self._snd_game_over_fired:
+                self._snd_game_over_fired = True
+                self.event_bus.emit("game_over")
             self.vs_result = (
                 "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
             )
@@ -1136,6 +1232,7 @@ class PygameRunner:
                 if self.lock_timer_ms <= 0:
                     self.pending_lock = False
                     self.engine.lock_piece()
+                    self.event_bus.emit("lock")
                     self.fast_dropping = False
                     self.current_fall_delay = self.config.fall_delay
                     self.piece_drop_accumulator_ms = 0.0
@@ -1160,9 +1257,14 @@ class PygameRunner:
             loaded = load_persistent_data("sandtris_highscore", self.high_score_path)
             self._cached_high_score = loaded if isinstance(loaded, list) else []
 
+        if self.engine.game_over and not self._snd_game_over_fired:
+            self._snd_game_over_fired = True
+            self.event_bus.emit("game_over")
+
         if self.engine.level > self._prev_level:
             self.level_up_timer_ms = 2000.0
             self._prev_level = self.engine.level
+            self.event_bus.emit("level_up")
         if self.level_up_timer_ms > 0:
             self.level_up_timer_ms = max(0.0, self.level_up_timer_ms - dt_ms)
 
@@ -1175,29 +1277,60 @@ class PygameRunner:
             self.sand_step_accumulator_ms -= sand_step_interval_ms
             self.engine.tick(sand_step_interval_ms)
 
+        # score/combo changes happen inside engine.tick — observe after
+        if self.engine.score != self._snd_prev_score:
+            connections = max(1, self.engine.combo - self._snd_prev_combo)
+            self.event_bus.emit("clear", connections=connections)
+            if self.engine.combo > 1:
+                self.event_bus.emit("combo", level=self.engine.combo)
+            self._snd_prev_score = self.engine.score
+
+        if self.engine.combo_timer_ms > 0:
+            self._snd_combo_active = True
+        elif self._snd_combo_active and self.engine.combo == 1:
+            self._snd_combo_active = False
+            self.event_bus.emit("combo_expire")
+
+        self._snd_prev_combo = self.engine.combo
+
     def _make_board_surf(
         self, engine: SandtrisEngine, ghost: bool = True
     ) -> pygame.Surface:
+        w, h = engine.config.width, engine.config.height
+        if ghost:
+            if self._player_board_surf is None or self._player_board_surf.get_size() != (w, h):
+                self._player_board_surf = pygame.Surface((w, h), 0, 24)
+            surf = self._player_board_surf
+        else:
+            if self._ai_board_surf is None or self._ai_board_surf.get_size() != (w, h):
+                self._ai_board_surf = pygame.Surface((w, h), 0, 24)
+            surf = self._ai_board_surf
         color_data = self._palette_lut[engine.grid.data].transpose(1, 0, 2).copy()
         if engine.active_piece and not engine.game_over:
             piece = engine.active_piece
             if ghost:
-                drop = 0
-                while not engine._check_collision_at(piece, 0, drop + 1):
-                    drop += 1
+                key = (piece.x, piece.y, piece.rotation, piece.name)
+                if key != self._ghost_key:
+                    drop = 0
+                    while not engine._check_collision_at(piece, 0, drop + 1):
+                        drop += 1
+                    self._ghost_key = key
+                    self._ghost_drop = drop
+                drop = self._ghost_drop
                 if drop > 0:
                     for bx, by, color in piece.get_cells():
                         gy = by + drop
                         if (
-                            0 <= bx < engine.config.width
-                            and 0 <= gy < engine.config.height
+                            0 <= bx < w
+                            and 0 <= gy < h
                             and engine.grid.data[gy, bx] == 0
                         ):
                             color_data[bx, gy] = self._palette_lut[color] // 3
             for bx, by, color in piece.get_cells():
-                if 0 <= bx < engine.config.width and 0 <= by < engine.config.height:
+                if 0 <= bx < w and 0 <= by < h:
                     color_data[bx, by] = self._palette_lut[color]
-        return pygame.surfarray.make_surface(color_data)
+        pygame.surfarray.blit_array(surf, color_data)
+        return surf
 
     def draw(self) -> None:
         if self.config.headless:
@@ -1260,6 +1393,14 @@ class PygameRunner:
                     self.mouse_down,
                     self.menu_focus,
                     ai_dead=self.ai_engine.game_over,
+                    fps=int(self.clock.get_fps()),
+                    next_shape_name=self.engine.next_shape_name,
+                    next_color_id=self.engine.next_color_id,
+                    scale=self.config.scale,
+                    color_palette=self.color_palette,
+                    player_combo=self.engine.combo,
+                    player_combo_timer_ms=self.engine.combo_timer_ms,
+                    level_up_timer_ms=self._vs_level_up_timer_ms,
                 )
                 if self.paused:
                     self.pause_view.draw(
@@ -1272,30 +1413,32 @@ class PygameRunner:
             return
 
         # grid.data is (height, width); surfarray expects (width, height, 3)
-        color_data = (
-            self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
-        )
+        w, h = self.config.width, self.config.height
+        if self._player_board_surf is None or self._player_board_surf.get_size() != (w, h):
+            self._player_board_surf = pygame.Surface((w, h), 0, 24)
+        color_data = self._palette_lut[self.engine.grid.data].transpose(1, 0, 2).copy()
 
         if self.engine.active_piece and not self.engine.game_over:
             piece = self.engine.active_piece
-            drop = 0
-            while not self.engine._check_collision_at(piece, 0, drop + 1):
-                drop += 1
+            key = (piece.x, piece.y, piece.rotation, piece.name)
+            if key != self._ghost_key:
+                drop = 0
+                while not self.engine._check_collision_at(piece, 0, drop + 1):
+                    drop += 1
+                self._ghost_key = key
+                self._ghost_drop = drop
+            drop = self._ghost_drop
             if drop > 0:
                 for bx, by, color in piece.get_cells():
                     gy = by + drop
                     if (
-                        0 <= bx < self.config.width
-                        and 0 <= gy < self.config.height
+                        0 <= bx < w
+                        and 0 <= gy < h
                         and self.engine.grid.data[gy, bx] == 0
                     ):
                         color_data[bx, gy] = self._palette_lut[color] // 3
-
             for bx, by, color in piece.get_cells():
-                if (
-                    0 <= bx < self.config.width
-                    and 0 <= by < self.config.height
-                ):
+                if 0 <= bx < w and 0 <= by < h:
                     color_data[bx, by] = self._palette_lut[color]
 
         if self.engine.flash_timer_ms > 0 and self.engine.flash_cells:
@@ -1305,9 +1448,9 @@ class PygameRunner:
             xs, ys = cells[:, 0], cells[:, 1]
             valid = (
                 (xs >= 0)
-                & (xs < self.config.width)
+                & (xs < w)
                 & (ys >= 0)
-                & (ys < self.config.height)
+                & (ys < h)
             )
             xs, ys = xs[valid], ys[valid]
             orig = color_data[xs, ys].astype(np.float32)
@@ -1315,7 +1458,8 @@ class PygameRunner:
                 orig * (1.0 - alpha) + flash_rgb * alpha
             ).astype(np.uint8)
 
-        surf = pygame.surfarray.make_surface(color_data)
+        pygame.surfarray.blit_array(self._player_board_surf, color_data)
+        surf = self._player_board_surf
         self.screen_view.draw(
             self.screen,
             surf,

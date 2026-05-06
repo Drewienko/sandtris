@@ -14,10 +14,11 @@ import time
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 
 from sandtris.ai.dqn import SandtrisNet, obs_to_arrays
-from sandtris.ai.replay import NStepBuffer, ReplayBuffer, Transition
+from sandtris.ai.replay import (
+    NStepBuffer, PrioritizedReplayBuffer, ReplayBuffer, Transition,
+)
 from sandtris.ai.vec_env import VecSandtrisEnv
 from sandtris.core.config import GameConfig
 
@@ -61,6 +62,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--n-envs", type=int, default=1,
                    help="parallel envs (uses threads; GIL released during numpy physics)")
+    p.add_argument("--per", action="store_true",
+                   help="use Prioritized Experience Replay instead of uniform sampling")
     return p.parse_args()
 
 
@@ -102,8 +105,12 @@ def run_training(
 
     optimizer = torch.optim.Adam(online.parameters(), lr=LR)
     buf_size = args.buffer_size or (BUFFER_SIZE if config.scale <= 4 else 25_000)
-    print(f"buffer={buf_size:,}  (~{buf_size * config.scale**2 * 2 // 1024 // 1024} MB)")
-    buffer = ReplayBuffer(buf_size)
+    print(f"buffer={buf_size:,}  per={args.per}  "
+          f"(~{buf_size * config.scale**2 * 2 // 1024 // 1024} MB)")
+    buffer: ReplayBuffer | PrioritizedReplayBuffer = (
+        PrioritizedReplayBuffer(buf_size, beta_steps=args.steps)
+        if args.per else ReplayBuffer(buf_size)
+    )
 
     eps = EPS_START
     obses = vec_env.reset()
@@ -178,10 +185,20 @@ def run_training(
                     ).gather(1, best_actions).squeeze(1)
                     q_target = batch.rewards + GAMMA_N * q_next * ~batch.dones
 
-                loss = F.mse_loss(q_sa, q_target)
+                td_errors = (q_target - q_sa).detach()
+                if batch.weights is not None:
+                    loss = (batch.weights * td_errors.pow(2)).mean()
+                else:
+                    loss = td_errors.pow(2).mean()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+
+                if batch.indices is not None:
+                    assert isinstance(buffer, PrioritizedReplayBuffer)
+                    buffer.update_priorities(
+                        batch.indices, td_errors.abs().cpu().numpy()
+                    )
 
             # --- sync target network ---
             if step % TARGET_SYNC == 0:
@@ -194,9 +211,14 @@ def run_training(
                 print(f"[{variant}] saved {path}")
 
     vec_env.close()
+    ckpt = {"state_dict": online.state_dict(), "settle_ticks": args.settle_ticks}
     final = out_dir / "dqn_final.pt"
-    torch.save({"state_dict": online.state_dict(), "settle_ticks": args.settle_ticks}, final)
-    print(f"[{variant}] done → {final}")
+    torch.save(ckpt, final)
+    testing_dir = args.out / "testing"
+    testing_dir.mkdir(exist_ok=True)
+    testing_path = testing_dir / f"{variant}_{args.steps}.pt"
+    torch.save(ckpt, testing_path)
+    print(f"[{variant}] done → {final}  ({testing_path})")
 
 
 def main() -> None:

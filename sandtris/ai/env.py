@@ -14,7 +14,6 @@ Usage:
 from typing import cast
 
 import numpy as np
-from scipy.ndimage import label
 
 from sandtris.ai.base import GameObservation
 from sandtris.core.config import GameConfig
@@ -41,6 +40,7 @@ def _best_span_per_color(data: np.ndarray) -> np.ndarray:
     Returns shape-(7,) float64, one entry per color 1-7, normalized to [0,1].
     Colors with no sand return 0.0.
     """
+    from scipy.ndimage import label  # lazy: not available on web/WASM
     _, w = data.shape
     base = (data % 10).astype(np.uint8)
     spans = np.zeros(7, dtype=np.float64)
@@ -72,6 +72,7 @@ def _reach_avg_span(data: np.ndarray) -> float:
 
 def _reach_surface_span(data: np.ndarray) -> float:
     """Max span of the topmost component per color. Buried components ignored. [0, 1]"""
+    from scipy.ndimage import label  # lazy: not available on web/WASM
     _, w = data.shape
     base = (data % 10).astype(np.uint8)
     best = 0.0

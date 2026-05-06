@@ -158,6 +158,6 @@ class SandtrisEngine:
             self.combo = min(10, self.combo + 1)
             self.max_combo = max(self.max_combo, self.combo)
             self.level = (self.score // 2000) + 1
-            self.combo_timer_ms = max(500.0, 3000.0 / self.level)
+            self.combo_timer_ms = max(2000.0, 6000.0 / self.level)
             self.flash_cells = self.grid.last_cleared
             self.flash_timer_ms = 280.0
