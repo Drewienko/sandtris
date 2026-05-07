@@ -162,6 +162,8 @@ class PygameRunner:
         )
         self.game_over_status = "Save your score"
         self.player_name = settings_data.get("player_name", "PLAYER")
+        self.music_volume: float = float(settings_data.get("music_volume", 0.25))
+        self.sfx_volume: float = float(settings_data.get("sfx_volume", 0.7))
         self.game_start_time = time.time()
         loaded_hs = load_persistent_data("sandtris_highscore", self.high_score_path)
         if not isinstance(loaded_hs, list):
@@ -175,6 +177,7 @@ class PygameRunner:
         self._prev_level: int = 1
         self.menu_focus: int = 0
         self._game_over_reloaded: bool = False
+        self._game_over_input_cooldown_ms: float = 0.0
         self.ai_engine: SandtrisEngine | None = None
         self.ai_agent = None
         self.ai_piece_drop_accumulator_ms: float = 0.0
@@ -186,7 +189,10 @@ class PygameRunner:
             try:
                 pygame.mixer.pre_init(44100, -16, 2, 512)
                 pygame.mixer.init()
-                self.sound = SoundManager()
+                self.sound = SoundManager(
+                    sfx_volume=self.sfx_volume,
+                    music_volume=self.music_volume,
+                )
                 self.sound.register(self.event_bus)
                 _music_path = (
                     Path(__file__).parent.parent / "audio" / "music" / "theme.ogg"
@@ -311,6 +317,10 @@ class PygameRunner:
                         event.size, pygame.RESIZABLE
                     )
 
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+                if self.sound:
+                    self.sound.set_muted(not self.sound._muted)
+
             if self.state == GameState.MAIN_MENU:
                 self._handle_main_menu_events(event)
             elif self.state == GameState.PLAYING:
@@ -332,6 +342,8 @@ class PygameRunner:
                 "theme_name": self.theme_name,
                 "sand_palette_name": self.sand_palette_name,
                 "player_name": self.player_name,
+                "music_volume": self.music_volume,
+                "sfx_volume": self.sfx_volume,
             },
         )
 
@@ -466,12 +478,20 @@ class PygameRunner:
             theme_name = self.settings_view.theme_at(screen_rect, event.pos)
             if theme_name is not None:
                 self._apply_theme(theme_name)
+                self.event_bus.emit("menu_select")
                 return
             sand_name = self.settings_view.sand_palette_at(
                 screen_rect, event.pos
             )
             if sand_name is not None:
                 self._apply_sand_palette(sand_name)
+                self.event_bus.emit("menu_select")
+                return
+            if self.settings_view.music_slider_contains(screen_rect, event.pos):
+                self.menu_focus = 3
+                return
+            if self.settings_view.sfx_slider_contains(screen_rect, event.pos):
+                self.menu_focus = 4
                 return
             if self.settings_view.back_button_contains(screen_rect, event.pos):
                 self.settings_view.name_field_active = False
@@ -499,10 +519,10 @@ class PygameRunner:
                 self.menu_focus = 0
                 return
             if event.key in self.config.key_down:
-                self.menu_focus = (self.menu_focus + 1) % 4
+                self.menu_focus = (self.menu_focus + 1) % 6
                 self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_up:
-                self.menu_focus = (self.menu_focus - 1) % 4
+                self.menu_focus = (self.menu_focus - 1) % 6
                 self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_left:
                 if self.menu_focus == 1:
@@ -513,6 +533,17 @@ class PygameRunner:
                     palettes = list(SAND_PALETTE_PRESETS.keys())
                     self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) - 1) % len(palettes)])
                     self.event_bus.emit("menu_nav")
+                elif self.menu_focus == 3:
+                    self.music_volume = max(0.0, round(self.music_volume - 0.05, 2))
+                    if self.sound:
+                        self.sound.set_music_volume(self.music_volume)
+                    self.event_bus.emit("menu_nav")
+                elif self.menu_focus == 4:
+                    self.sfx_volume = max(0.0, round(self.sfx_volume - 0.05, 2))
+                    if self.sound:
+                        self.sound.set_sfx_volume(self.sfx_volume)
+                        self.sound.preview_volume()
+                    self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_right:
                 if self.menu_focus == 1:
                     themes = list(THEME_PRESETS.keys())
@@ -522,11 +553,22 @@ class PygameRunner:
                     palettes = list(SAND_PALETTE_PRESETS.keys())
                     self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) + 1) % len(palettes)])
                     self.event_bus.emit("menu_nav")
+                elif self.menu_focus == 3:
+                    self.music_volume = min(1.0, round(self.music_volume + 0.05, 2))
+                    if self.sound:
+                        self.sound.set_music_volume(self.music_volume)
+                    self.event_bus.emit("menu_nav")
+                elif self.menu_focus == 4:
+                    self.sfx_volume = min(1.0, round(self.sfx_volume + 0.05, 2))
+                    if self.sound:
+                        self.sound.set_sfx_volume(self.sfx_volume)
+                        self.sound.preview_volume()
+                    self.event_bus.emit("menu_nav")
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.event_bus.emit("menu_select")
                 if self.menu_focus == 0:
                     self.settings_view.name_field_active = True
-                elif self.menu_focus == 3:
+                elif self.menu_focus == 5:
                     self.settings_view.name_field_active = False
                     self._save_settings()
                     self.state = self.previous_state
@@ -541,23 +583,22 @@ class PygameRunner:
         self.vs_result = None
         self.menu_focus = 0
 
-        _candidates = sorted(
-            Path("models/testing").glob("*.pt"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        model_path = next((p for p in _candidates if p.exists()), None)
-        if model_path is not None:
-            try:
-                from sandtris.ai.dqn_agent import DQNAgent
-                self.ai_agent = DQNAgent(model_path)
-                self.ai_agent.reset()
-                print(f"AI loaded: {model_path}")
-            except Exception as e:
-                print(f"AI load failed ({model_path}): {e}")
-                self.ai_agent = None
-        else:
-            self.ai_agent = None
+        if self.ai_agent is None:
+            _candidates = sorted(
+                Path("models/testing").glob("*.pt"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            model_path = next((p for p in _candidates if p.exists()), None)
+            if model_path is not None:
+                try:
+                    from sandtris.ai.dqn_agent import DQNAgent
+                    self.ai_agent = DQNAgent(model_path)
+                    print(f"AI loaded: {model_path}")
+                except Exception as e:
+                    print(f"AI load failed ({model_path}): {e}")
+        if self.ai_agent is not None:
+            self.ai_agent.reset()
 
         self._restart_game()
         self.state = GameState.PLAYER_VS_AI
@@ -635,11 +676,16 @@ class PygameRunner:
                 return
 
             if self.vs_result is not None:
-                if event.key in self.config.key_down:
+                if self._game_over_input_cooldown_ms > 0:
+                    return
+                if event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % 2
-                elif event.key in self.config.key_up:
+                    self.event_bus.emit("menu_nav")
+                elif event.key in self.config.key_up or event.key in self.config.key_left:
                     self.menu_focus = (self.menu_focus - 1) % 2
+                    self.event_bus.emit("menu_nav")
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    self.event_bus.emit("menu_select")
                     if self.menu_focus == 0:
                         self._start_vs_game()
                     else:
@@ -653,9 +699,9 @@ class PygameRunner:
                     or self.pause_view.confirming_menu
                 )
                 n = 2 if confirming else 4
-                if event.key in self.config.key_down:
+                if event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % n
-                elif event.key in self.config.key_up:
+                elif event.key in self.config.key_up or event.key in self.config.key_left:
                     self.menu_focus = (self.menu_focus - 1) % n
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if confirming:
@@ -815,9 +861,9 @@ class PygameRunner:
                         self.running = False
                     else:
                         self.main_menu_view.confirming_quit = False
-                elif event.key in self.config.key_down:
+                elif event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % 2
-                elif event.key in self.config.key_up:
+                elif event.key in self.config.key_up or event.key in self.config.key_left:
                     self.menu_focus = (self.menu_focus - 1) % 2
                 return
             _show_vs = window is None
@@ -953,17 +999,22 @@ class PygameRunner:
                 return
 
             if self.engine.game_over:
-                if event.key in (pygame.K_DOWN,):
+                if self._game_over_input_cooldown_ms > 0:
+                    return
+                if event.key == pygame.K_r:
+                    self._restart_game()
+                    return
+                if event.key in self.config.key_down or event.key in self.config.key_right:
                     if self.menu_focus == -1:
                         self.menu_focus = 0
                     else:
                         self.menu_focus = (self.menu_focus + 1) % 3
-                elif event.key in (pygame.K_UP,):
+                elif event.key in self.config.key_up or event.key in self.config.key_left:
                     if self.menu_focus == 0:
                         self.menu_focus = -1
                     elif self.menu_focus > 0:
                         self.menu_focus -= 1
-                elif event.key in (pygame.K_RETURN,):
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if self.menu_focus == 0:
                         self._restart_game()
                     elif self.menu_focus == 1:
@@ -985,9 +1036,9 @@ class PygameRunner:
                     or self.pause_view.confirming_menu
                 )
                 n = 2 if confirming else 4
-                if event.key in self.config.key_down:
+                if event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % n
-                elif event.key in self.config.key_up:
+                elif event.key in self.config.key_up or event.key in self.config.key_left:
                     self.menu_focus = (self.menu_focus - 1) % n
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if confirming:
@@ -1055,6 +1106,8 @@ class PygameRunner:
                     self.current_fall_delay = self.config.fast_fall_delay
 
     def _update_vs(self, dt_ms: float) -> None:
+        if self._game_over_input_cooldown_ms > 0:
+            self._game_over_input_cooldown_ms = max(0.0, self._game_over_input_cooldown_ms - dt_ms)
         if self.vs_result is not None or self.ai_engine is None or self.paused:
             return
 
@@ -1176,6 +1229,7 @@ class PygameRunner:
                 "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
             )
             self.menu_focus = 0
+            self._game_over_input_cooldown_ms = 400.0
 
     _DAS_DELAY_MS = 150.0
     _DAS_REPEAT_MS = 50.0
@@ -1226,6 +1280,9 @@ class PygameRunner:
         if self.paused:
             return
 
+        if self._game_over_input_cooldown_ms > 0:
+            self._game_over_input_cooldown_ms = max(0.0, self._game_over_input_cooldown_ms - dt_ms)
+
         if not self.engine.game_over:
             if self.pending_lock:
                 self.lock_timer_ms -= dt_ms
@@ -1254,6 +1311,7 @@ class PygameRunner:
 
         if self.engine.game_over and not self._game_over_reloaded:
             self._game_over_reloaded = True
+            self._game_over_input_cooldown_ms = 400.0
             loaded = load_persistent_data("sandtris_highscore", self.high_score_path)
             self._cached_high_score = loaded if isinstance(loaded, list) else []
 
@@ -1374,6 +1432,8 @@ class PygameRunner:
                 pygame.mouse.get_pos(),
                 self.mouse_down,
                 self.menu_focus,
+                music_volume=self.music_volume,
+                sfx_volume=self.sfx_volume,
             )
             pygame.display.flip()
             return

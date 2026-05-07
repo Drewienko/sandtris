@@ -89,7 +89,23 @@ class HowToPlayScreen:
             surface.blit(text, text.get_rect(centerx=panel.centerx, top=y))
             y += line_h
 
+        y += line_h // 2
+        combo_label = self.body_font.render(
+            "COMBO:", True, self.theme.title_text
+        )
+        surface.blit(combo_label, combo_label.get_rect(centerx=panel.centerx, top=y))
         y += line_h
+
+        combo_lines = [
+            "Clear again before the bar runs out",
+            "to chain combos and multiply score.",
+        ]
+        for line in combo_lines:
+            text = self.body_font.render(line, True, self.theme.body_text)
+            surface.blit(text, text.get_rect(centerx=panel.centerx, top=y))
+            y += line_h
+
+        y += line_h // 2
         controls_label = self.body_font.render(
             "CONTROLS:", True, self.theme.title_text
         )
@@ -97,7 +113,7 @@ class HowToPlayScreen:
             controls_label,
             controls_label.get_rect(centerx=panel.centerx, top=y),
         )
-        y += line_h + line_h // 2
+        y += line_h
 
         controls = [
             (config.key_left, "Move Left"),
@@ -106,6 +122,8 @@ class HowToPlayScreen:
             (config.key_down, "Soft Drop"),
             (config.key_drop, "Hard Drop"),
             (config.key_pause, "Pause"),
+            ((pygame.K_r,), "Restart (game over)"),
+            ((pygame.K_m,), "Mute / Unmute"),
         ]
 
         margin = self.dims.modal_button_margin

@@ -1,5 +1,7 @@
 {
   "theme_name": "Egyptian",
   "sand_palette_name": "Desert",
-  "player_name": "THOMAS"
+  "player_name": "THOMAS",
+  "music_volume": 0.2,
+  "sfx_volume": 0.9
 }

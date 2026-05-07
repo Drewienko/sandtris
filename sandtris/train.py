@@ -22,7 +22,6 @@ from sandtris.ai.replay import (
 from sandtris.ai.vec_env import VecSandtrisEnv
 from sandtris.core.config import GameConfig
 
-# --- hyperparameters ---
 GAMMA = 0.99
 N_STEP = 5
 GAMMA_N = GAMMA ** N_STEP   # discount on bootstrap in n-step target

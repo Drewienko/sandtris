@@ -16,16 +16,11 @@ from sandtris.core.event_bus import GameEventBus
 
 _SR = 44100  # sample rate
 
-# Musical constants (Hz)
 C3, E3, G3 = 131, 165, 196
 C4, E4, G4 = 262, 330, 392
 
 _COMBO_NOTES = [C3, E3, G3, C4, E4, G4]  # index = combo level - 1
 
-
-# ---------------------------------------------------------------------------
-# Low-level primitives
-# ---------------------------------------------------------------------------
 
 def _sine(freq: float, n: int) -> np.ndarray:
     t = np.linspace(0, n / _SR, n, dtype=np.float32)
@@ -70,10 +65,6 @@ def _to_sound(samples: np.ndarray) -> pygame.Sound:
     stereo = np.column_stack([samples, samples])
     return pygame.sndarray.make_sound((stereo * 32767).astype(np.int16))
 
-
-# ---------------------------------------------------------------------------
-# SFX builders
-# ---------------------------------------------------------------------------
 
 def _build_move() -> pygame.Sound:
     n = int(_SR * 0.035)
@@ -185,10 +176,6 @@ def _build_menu_select() -> pygame.Sound:
     )
 
 
-# ---------------------------------------------------------------------------
-# SoundManager
-# ---------------------------------------------------------------------------
-
 class SoundManager:
     def __init__(self, sfx_volume: float = 0.7, music_volume: float = 0.25) -> None:
         self.sfx_volume = sfx_volume
@@ -209,7 +196,6 @@ class SoundManager:
             "death":  pygame.mixer.Channel(7),
         }
 
-        # pre-generate all sounds (cached in memory, zero cost per play)
         self._sounds: dict[str, pygame.Sound] = {
             "rotate":       _build_rotate(),
             "hard_drop":    _build_hard_drop(),
@@ -227,10 +213,6 @@ class SoundManager:
             "menu_select":  _build_menu_select(),
         }
         self._set_volumes()
-
-    # ------------------------------------------------------------------
-    # Volume / mute
-    # ------------------------------------------------------------------
 
     def _set_volumes(self) -> None:
         v = 0.0 if self._muted else self.sfx_volume
@@ -254,10 +236,6 @@ class SoundManager:
         else:
             pygame.mixer.music.set_volume(self.music_volume)
 
-    # ------------------------------------------------------------------
-    # Playback
-    # ------------------------------------------------------------------
-
     def _play(self, channel: str, name: str) -> None:
         if self._muted:
             return
@@ -270,10 +248,6 @@ class SoundManager:
         else:
             ch.stop()
             ch.play(snd)
-
-    # ------------------------------------------------------------------
-    # Named play methods (called by observer callbacks)
-    # ------------------------------------------------------------------
 
     def play_rotate(self) -> None:
         self._play("rotate", "rotate")
@@ -317,10 +291,6 @@ class SoundManager:
         """Play menu_nav at current volume — call when settings slider moves."""
         self._play("ui", "menu_nav")
 
-    # ------------------------------------------------------------------
-    # Music
-    # ------------------------------------------------------------------
-
     def load_music(self, path: str) -> None:
         try:
             pygame.mixer.music.load(path)
@@ -340,10 +310,6 @@ class SoundManager:
     def stop_music(self) -> None:
         pygame.mixer.music.stop()
         self._music_started = False
-
-    # ------------------------------------------------------------------
-    # Observer registration
-    # ------------------------------------------------------------------
 
     def register(self, bus: GameEventBus) -> None:
         bus.subscribe("rotate",       lambda **_: self.play_rotate())

@@ -83,6 +83,15 @@ SAND_PALETTE_PRESETS: dict[str, dict[int, tuple[int, int, int]]] = {
         6: (146, 82, 161),
         7: (204, 92, 74),
     },
+    "Accessible": {  # Okabe-Ito palette — safe for deuteranopia, protanopia, tritanopia
+        1: (230, 159,   0),  # orange
+        2: ( 86, 180, 233),  # sky blue
+        3: (  0, 158, 115),  # bluish green
+        4: (240, 228,  66),  # yellow
+        5: (  0, 114, 178),  # blue
+        6: (213,  94,   0),  # vermillion
+        7: (204, 121, 167),  # reddish purple
+    },
 }
 
 

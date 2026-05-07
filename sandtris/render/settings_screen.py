@@ -31,6 +31,7 @@ class SettingsScreen:
         panel = surface_rect.inflate(-margin * 2, -margin * 2)
         title_height = 80
         name_row_height = 56
+        slider_h = 44
         back_height = self.dims.modal_button_height + gap * 2
         sections_top = panel.top + title_height + name_row_height + gap * 2
         sections_height = (
@@ -38,7 +39,8 @@ class SettingsScreen:
             - title_height
             - name_row_height
             - back_height
-            - gap * 3
+            - slider_h * 2
+            - gap * 5
         )
         section_width = (panel.width - gap) // 2
 
@@ -60,6 +62,18 @@ class SettingsScreen:
             panel.width - section_width - gap * 2,
             sections_height,
         )
+        music_row = pygame.Rect(
+            panel.left + gap,
+            theme_section.bottom + gap,
+            panel.width - gap * 2,
+            slider_h,
+        )
+        sfx_row = pygame.Rect(
+            panel.left + gap,
+            music_row.bottom + gap,
+            panel.width - gap * 2,
+            slider_h,
+        )
         back_rect = pygame.Rect(
             panel.left + gap,
             panel.bottom - self.dims.modal_button_height - gap,
@@ -72,6 +86,8 @@ class SettingsScreen:
             "name_row": name_row,
             "theme_section": theme_section,
             "sand_section": sand_section,
+            "music_row": music_row,
+            "sfx_row": sfx_row,
             "back": back_rect,
         }
 
@@ -96,6 +112,16 @@ class SettingsScreen:
     ) -> bool:
         return self.get_layout(surface_rect)["back"].collidepoint(pos)
 
+    def music_slider_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        return self.get_layout(surface_rect)["music_row"].collidepoint(pos)
+
+    def sfx_slider_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        return self.get_layout(surface_rect)["sfx_row"].collidepoint(pos)
+
     def get_theme_hitboxes(
         self, surface_rect: pygame.Rect
     ) -> dict[str, pygame.Rect]:
@@ -108,7 +134,7 @@ class SettingsScreen:
         for index, name in enumerate(THEME_PRESETS):
             hitboxes[name] = pygame.Rect(
                 section.left + margin,
-                section.top + 44 + index * (card_height + gap),
+                section.top + 56 + index * (card_height + gap),
                 section.width - margin * 2,
                 card_height,
             )
@@ -126,7 +152,7 @@ class SettingsScreen:
         for index, name in enumerate(SAND_PALETTE_PRESETS):
             hitboxes[name] = pygame.Rect(
                 section.left + margin,
-                section.top + 44 + index * (card_height + gap),
+                section.top + 56 + index * (card_height + gap),
                 section.width - margin * 2,
                 card_height,
             )
@@ -166,6 +192,32 @@ class SettingsScreen:
             )
             pygame.draw.rect(surface, color, swatch_rect)
 
+    def _draw_slider_row(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        label: str,
+        value: float,
+        focused: bool,
+    ) -> None:
+        m = self.dims.margin
+        if focused:
+            pygame.draw.rect(surface, self.theme.panel_bg_alt, rect, border_radius=3)
+            pygame.draw.rect(surface, self.theme.panel_border_bright, rect, 2, border_radius=3)
+        lbl = self.body_font.render(label, True, self.theme.body_text)
+        surface.blit(lbl, lbl.get_rect(left=rect.left + m, centery=rect.centery))
+        pct = self.body_font.render(f"{int(round(value * 100))}%", True, self.theme.title_text)
+        bar_w = rect.width - m * 2 - lbl.get_width() - pct.get_width() - 24
+        bar_x = rect.left + m + lbl.get_width() + 12
+        bar_h, bar_y = 10, rect.centery - 5
+        pygame.draw.rect(surface, self.theme.panel_border,
+                         (bar_x, bar_y, bar_w, bar_h), border_radius=4)
+        fill = int(bar_w * value)
+        if fill > 0:
+            pygame.draw.rect(surface, self.theme.accent_panel,
+                             (bar_x, bar_y, fill, bar_h), border_radius=4)
+        surface.blit(pct, pct.get_rect(left=bar_x + bar_w + 8, centery=rect.centery))
+
     def draw(
         self,
         surface: pygame.Surface,
@@ -175,6 +227,8 @@ class SettingsScreen:
         mouse_pos: tuple[int, int],
         mouse_down: bool,
         focused_row: int = -1,
+        music_volume: float = 0.25,
+        sfx_volume: float = 0.7,
     ) -> None:
         surface.fill(self.theme.screen_bg)
         layout = self.get_layout(surface.get_rect())
@@ -263,11 +317,11 @@ class SettingsScreen:
         )
         surface.blit(
             theme_title,
-            (theme_section.left + self.dims.margin, theme_section.top + 12),
+            (theme_section.left + self.dims.margin, theme_section.top + 20),
         )
         surface.blit(
             sand_title,
-            (sand_section.left + self.dims.margin, sand_section.top + 12),
+            (sand_section.left + self.dims.margin, sand_section.top + 20),
         )
 
         for name, rect in self.get_theme_hitboxes(surface.get_rect()).items():
@@ -318,9 +372,16 @@ class SettingsScreen:
                 surface, rect, SAND_PALETTE_PRESETS[name]
             )
 
+        self._draw_slider_row(
+            surface, layout["music_row"], "MUSIC VOL", music_volume, focused_row == 3
+        )
+        self._draw_slider_row(
+            surface, layout["sfx_row"], "SFX VOL  ", sfx_volume, focused_row == 4
+        )
+
         back_rect = layout["back"]
         mouse_hov = back_rect.collidepoint(mouse_pos)
-        hov = mouse_hov or focused_row == 3
+        hov = mouse_hov or focused_row == 5
         self.back_button.draw(
             surface,
             back_rect,

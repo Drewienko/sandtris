@@ -29,11 +29,6 @@ _NEIGHBOR_OFFSETS = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Reach functions — measure how close any color is to a wall-to-wall span.
-# Called once per piece placed; result delta drives the reach reward.
-# ---------------------------------------------------------------------------
-
 def _best_span_per_color(data: np.ndarray) -> np.ndarray:
     """Max horizontal span of best connected component per color.
 
@@ -96,10 +91,6 @@ def _reach_surface_span(data: np.ndarray) -> float:
     return best
 
 
-# ---------------------------------------------------------------------------
-# Height helper
-# ---------------------------------------------------------------------------
-
 def _aggregate_height(data: np.ndarray) -> int:
     occupied = data > 0
     col_heights = np.where(
@@ -109,10 +100,6 @@ def _aggregate_height(data: np.ndarray) -> int:
     ).astype(np.int32)
     return int(col_heights.sum())
 
-
-# ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
 
 def compute_placements(engine: SandtrisEngine) -> list[tuple[int, int]]:
     """All legal (rotation, col) pairs for the active piece in engine."""
