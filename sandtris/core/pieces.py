@@ -71,7 +71,7 @@ class Tetromino:
         self._update_cell_coords()
 
     def _update_cell_coords(self) -> None:
-        self._cell_rows, self._cell_cols = np.where(self.shape != 0)
+        self._cell_rows, self._cell_cols = np.nonzero(self.shape != 0)
 
     def rotate(self, times: int = 1) -> None:
         self.shape = np.rot90(self.shape, k=-times)

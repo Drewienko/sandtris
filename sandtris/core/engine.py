@@ -143,12 +143,12 @@ class SandtrisEngine:
 
         if self.flash_timer_ms > 0:
             self.flash_timer_ms = max(0.0, self.flash_timer_ms - dt_ms)
-            if self.flash_timer_ms == 0.0:
+            if self.flash_timer_ms <= 0.0:
                 self.flash_cells = []
 
         if self.combo_timer_ms > 0:
             self.combo_timer_ms = max(0.0, self.combo_timer_ms - dt_ms)
-            if self.combo_timer_ms == 0.0:
+            if self.combo_timer_ms <= 0.0:
                 self.combo = 1
 
         cleared_pixels, connections = self.grid.check_line_clears()

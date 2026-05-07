@@ -47,7 +47,7 @@ def _best_span_per_color(data: np.ndarray) -> np.ndarray:
             tuple[np.ndarray, int], label(mask, structure=_CONNECTIVITY)
         )
         for lbl in range(1, n + 1):
-            cols = np.where((labeled == lbl).any(axis=0))[0]
+            cols = np.nonzero((labeled == lbl).any(axis=0))[0]
             if len(cols) >= 2:
                 spans[color - 1] = max(
                     spans[color - 1], (cols[-1] - cols[0]) / (w - 1)
@@ -80,12 +80,12 @@ def _reach_surface_span(data: np.ndarray) -> float:
         )
         top_lbl, top_row = 0, data.shape[0]
         for lbl in range(1, n + 1):
-            rows = np.where((labeled == lbl).any(axis=1))[0]
+            rows = np.nonzero((labeled == lbl).any(axis=1))[0]
             if len(rows) and rows[0] < top_row:
                 top_row = rows[0]
                 top_lbl = lbl
         if top_lbl:
-            cols = np.where((labeled == top_lbl).any(axis=0))[0]
+            cols = np.nonzero((labeled == top_lbl).any(axis=0))[0]
             if len(cols) >= 2:
                 best = max(best, (cols[-1] - cols[0]) / (w - 1))
     return best

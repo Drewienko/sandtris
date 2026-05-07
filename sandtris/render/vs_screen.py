@@ -42,7 +42,7 @@ class VsScreen:
         hud_h = self.dims.hud_height
         btn_h = self.dims.button_height
         center_w = self.dims.side_min_width
-        content_top = hud_h + g
+        content_top = m + hud_h + g
         content_h = surface_rect.height - content_top - m
         board_w = (surface_rect.width - m * 2 - center_w - g * 2) // 2
 

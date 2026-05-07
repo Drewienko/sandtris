@@ -52,7 +52,7 @@ class Grid:
                 can_move = remaining & gate & in_bounds & (below[nx_safe] == 0)
                 if not can_move.any():
                     continue
-                srcs = np.where(can_move)[0]
+                srcs = np.nonzero(can_move)[0]
                 tgts = nx_safe[srcs]
                 _, first = np.unique(tgts, return_index=True)
                 srcs, tgts = srcs[first], tgts[first]

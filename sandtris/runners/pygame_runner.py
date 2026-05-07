@@ -317,7 +317,7 @@ class PygameRunner:
                         event.size, pygame.RESIZABLE
                     )
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+            if event.type == pygame.KEYDOWN and event.key in self.config.key_mute:
                 if self.sound:
                     self.sound.set_muted(not self.sound._muted)
 
@@ -524,16 +524,17 @@ class PygameRunner:
             elif event.key in self.config.key_up:
                 self.menu_focus = (self.menu_focus - 1) % 6
                 self.event_bus.emit("menu_nav")
-            elif event.key in self.config.key_left:
+            elif event.key in self.config.key_drop:
                 if self.menu_focus == 1:
                     themes = list(THEME_PRESETS.keys())
-                    self._apply_theme(themes[(themes.index(self.theme_name) - 1) % len(themes)])
+                    self._apply_theme(themes[(themes.index(self.theme_name) + 1) % len(themes)])
                     self.event_bus.emit("menu_nav")
                 elif self.menu_focus == 2:
                     palettes = list(SAND_PALETTE_PRESETS.keys())
-                    self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) - 1) % len(palettes)])
+                    self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) + 1) % len(palettes)])
                     self.event_bus.emit("menu_nav")
-                elif self.menu_focus == 3:
+            elif event.key in self.config.key_left:
+                if self.menu_focus == 3:
                     self.music_volume = max(0.0, round(self.music_volume - 0.05, 2))
                     if self.sound:
                         self.sound.set_music_volume(self.music_volume)
@@ -545,15 +546,7 @@ class PygameRunner:
                         self.sound.preview_volume()
                     self.event_bus.emit("menu_nav")
             elif event.key in self.config.key_right:
-                if self.menu_focus == 1:
-                    themes = list(THEME_PRESETS.keys())
-                    self._apply_theme(themes[(themes.index(self.theme_name) + 1) % len(themes)])
-                    self.event_bus.emit("menu_nav")
-                elif self.menu_focus == 2:
-                    palettes = list(SAND_PALETTE_PRESETS.keys())
-                    self._apply_sand_palette(palettes[(palettes.index(self.sand_palette_name) + 1) % len(palettes)])
-                    self.event_bus.emit("menu_nav")
-                elif self.menu_focus == 3:
+                if self.menu_focus == 3:
                     self.music_volume = min(1.0, round(self.music_volume + 0.05, 2))
                     if self.sound:
                         self.sound.set_music_volume(self.music_volume)
@@ -779,7 +772,7 @@ class PygameRunner:
             assert self.screen is not None
             screen_rect = self.screen.get_rect()
             if self.how_to_play_view.back_button_contains(
-                screen_rect, event.pos
+                screen_rect, event.pos, self.config
             ):
                 self.state = self.previous_state
 
@@ -1001,7 +994,7 @@ class PygameRunner:
             if self.engine.game_over:
                 if self._game_over_input_cooldown_ms > 0:
                     return
-                if event.key == pygame.K_r:
+                if event.key in self.config.key_restart:
                     self._restart_game()
                     return
                 if event.key in self.config.key_down or event.key in self.config.key_right:

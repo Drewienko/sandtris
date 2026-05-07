@@ -17,6 +17,8 @@ class GameConfig:
     key_down: tuple[int, ...] = (pygame.K_DOWN, pygame.K_s)
     key_drop: tuple[int, ...] = (pygame.K_SPACE, pygame.K_RETURN)
     key_pause: tuple[int, ...] = (pygame.K_ESCAPE, pygame.K_p)
+    key_restart: tuple[int, ...] = (pygame.K_r,)
+    key_mute: tuple[int, ...] = (pygame.K_m,)
     width: int = field(init=False)
     height: int = field(init=False)
 
