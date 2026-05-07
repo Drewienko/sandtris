@@ -20,3 +20,5 @@ logs/
 
 # Trained models (large binary files)
 models/
+!models/testing/
+!models/testing/avg_span_1000000.pt
