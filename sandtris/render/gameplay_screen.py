@@ -177,6 +177,7 @@ class GameplayScreen:
         combo_timer_ms: float,
         mouse_pos: tuple[int, int],
         mouse_down: bool,
+        mode_label: str = "",
     ) -> None:
         surface.fill(self.theme.screen_bg)
         layout = self.get_layout(surface.get_rect())
@@ -226,14 +227,25 @@ class GameplayScreen:
         )
         surface.blit(title, title_rect)
 
+        if mode_label:
+            mode_surf = self._cached_render(
+                self.body_font, mode_label, self.theme.accent_text
+            )
+            mode_rect = mode_surf.get_rect(
+                right=layout.hud_rect.right - 24,
+                centery=layout.hud_rect.top + 32,
+            )
+            surface.blit(mode_surf, mode_rect)
+
         score_text = self._cached_render(
             self.body_font, f"Score {score}", self.theme.body_text
         )
         level_text = self._cached_render(
             self.body_font, f"Level {level}", self.theme.body_text
         )
+        combo_color = self.theme.accent_text if combo_timer_ms > 0 else self.theme.body_text
         combo_text = self._cached_render(
-            self.body_font, f"Combo {combo}x", self.theme.body_text
+            self.body_font, f"Combo {combo}x", combo_color
         )
         fps_text = self.body_font.render(
             f"FPS {fps}", True, self.theme.accent_text
@@ -258,23 +270,23 @@ class GameplayScreen:
         surface.blit(fps_text, fps_rect)
 
         if combo_timer_ms > 0:
-            bar_h = 4
+            bar_h = 8
             bar_y = layout.hud_rect.bottom - bar_h - 4
             bar_max_w = layout.hud_rect.width - 48
             bar_x = layout.hud_rect.left + 24
-            fill_w = int(bar_max_w * (combo_timer_ms / 3000.0))
+            fill_w = int(bar_max_w * min(combo_timer_ms / 3000.0, 1.0))
             pygame.draw.rect(
                 surface,
                 self.theme.panel_border,
                 (bar_x, bar_y, bar_max_w, bar_h),
-                border_radius=2,
+                border_radius=3,
             )
             if fill_w > 0:
                 pygame.draw.rect(
                     surface,
-                    self.theme.accent_panel,
+                    self.theme.accent_text,
                     (bar_x, bar_y, fill_w, bar_h),
-                    border_radius=2,
+                    border_radius=3,
                 )
 
         draw_panel(

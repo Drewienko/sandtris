@@ -254,6 +254,7 @@ class PygameRunner:
         self.current_fall_delay = self.config.fall_delay
         self.running = True
         self.fast_dropping = False
+        self.hard_drop_held = False
         self.paused = False
         self.mouse_down = False
         self.piece_drop_accumulator_ms = 0.0
@@ -314,7 +315,8 @@ class PygameRunner:
                     self.screen = pygame.display.get_surface()
                 else:
                     self.screen = pygame.display.set_mode(
-                        event.size, pygame.RESIZABLE
+                        (max(480, event.w), max(700, event.h)),
+                        pygame.RESIZABLE,
                     )
 
             if event.type == pygame.KEYDOWN and event.key in self.config.key_mute:
@@ -335,6 +337,8 @@ class PygameRunner:
                 self._handle_vs_events(event)
 
     def _save_settings(self) -> None:
+        if not self.player_name.strip():
+            self.player_name = "PLAYER"
         save_persistent_data(
             "sandtris_settings",
             self.settings_path,
@@ -387,7 +391,7 @@ class PygameRunner:
             sum(1 for e in self._cached_high_score if e.get("score", 0) > score)
             + 1
         )
-        return rank if rank <= 10 else None
+        return rank if rank <= 20 else None
 
     def _save_high_score(self) -> None:
         duration_s = int(time.time() - self.game_start_time)
@@ -407,7 +411,7 @@ class PygameRunner:
         scores = saved if isinstance(saved, list) else []
         scores.append(entry)
         scores.sort(key=lambda e: e.get("score", 0), reverse=True)
-        scores = scores[:10]
+        scores = scores[:20]
         save_persistent_data(
             "sandtris_highscore", self.high_score_path, scores
         )
@@ -426,7 +430,7 @@ class PygameRunner:
         elif saved_rank is not None:
             self.game_over_status = f"Saved as #{saved_rank}"
         else:
-            self.game_over_status = "Not in top 10"
+            self.game_over_status = "Not in top 20"
 
     def _open_settings(self) -> None:
         self.previous_state = self.state
@@ -439,11 +443,13 @@ class PygameRunner:
         self.engine = SandtrisEngine(self.config)
         self.paused = False
         self.fast_dropping = False
+        self.hard_drop_held = False
         self.current_fall_delay = self.config.fall_delay
         self.piece_drop_accumulator_ms = 0.0
         self.sand_step_accumulator_ms = 0.0
         self.pause_view.confirming_restart = False
         self.pause_view.confirming_menu = False
+        self.pause_view.confirming_give_up = False
         self.game_over_status = "Save your score"
         self.game_start_time = time.time()
         self.level_up_timer_ms = 0.0
@@ -613,6 +619,15 @@ class PygameRunner:
                 if self.pause_view.yes_button_contains(screen_rect, event.pos):
                     if self.pause_view.confirming_restart:
                         self._start_vs_game()
+                    elif self.pause_view.confirming_give_up:
+                        self.engine.game_over = True
+                        self.paused = False
+                        self.pause_view.confirming_give_up = False
+                        assert self.ai_engine is not None
+                        self.vs_result = (
+                            "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
+                        )
+                        self.menu_focus = 0
                     elif self.pause_view.confirming_menu:
                         self.state = GameState.MAIN_MENU
                         self.paused = False
@@ -621,6 +636,7 @@ class PygameRunner:
                 if self.pause_view.no_button_contains(screen_rect, event.pos):
                     self.pause_view.confirming_restart = False
                     self.pause_view.confirming_menu = False
+                    self.pause_view.confirming_give_up = False
                     return
                 if self.pause_view.resume_button_contains(screen_rect, event.pos):
                     self.paused = False
@@ -630,6 +646,10 @@ class PygameRunner:
                     return
                 if self.pause_view.settings_button_contains(screen_rect, event.pos):
                     self._open_settings()
+                    return
+                if self.pause_view.help_button_contains(screen_rect, event.pos):
+                    self.previous_state = GameState.PLAYER_VS_AI
+                    self.state = GameState.HOW_TO_PLAY
                     return
                 if self.pause_view.menu_button_contains(screen_rect, event.pos):
                     self.pause_view.confirming_menu = True
@@ -644,12 +664,9 @@ class PygameRunner:
                     self.menu_focus = 0
                     return
                 if self.vs_view.quit_button_contains(screen_rect, event.pos):
-                    self.engine.game_over = True
-                    assert self.ai_engine is not None
-                    self.vs_result = (
-                        "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
-                    )
-                    self.menu_focus = 0
+                    self.paused = True
+                    self.pause_view.confirming_give_up = True
+                    self.menu_focus = 1
                     return
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
@@ -671,7 +688,9 @@ class PygameRunner:
             if self.vs_result is not None:
                 if self._game_over_input_cooldown_ms > 0:
                     return
-                if event.key in self.config.key_down or event.key in self.config.key_right:
+                if event.key in self.config.key_restart:
+                    self._start_vs_game()
+                elif event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % 2
                     self.event_bus.emit("menu_nav")
                 elif event.key in self.config.key_up or event.key in self.config.key_left:
@@ -690,8 +709,9 @@ class PygameRunner:
                 confirming = (
                     self.pause_view.confirming_restart
                     or self.pause_view.confirming_menu
+                    or self.pause_view.confirming_give_up
                 )
-                n = 2 if confirming else 4
+                n = 2 if confirming else 5
                 if event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % n
                 elif event.key in self.config.key_up or event.key in self.config.key_left:
@@ -701,6 +721,15 @@ class PygameRunner:
                         if self.menu_focus == 0:
                             if self.pause_view.confirming_restart:
                                 self._start_vs_game()
+                            elif self.pause_view.confirming_give_up:
+                                self.engine.game_over = True
+                                self.paused = False
+                                self.pause_view.confirming_give_up = False
+                                assert self.ai_engine is not None
+                                self.vs_result = (
+                                    "YOU WIN!" if self.engine.score > self.ai_engine.score else "AI WINS!"
+                                )
+                                self.menu_focus = 0
                             else:
                                 self.state = GameState.MAIN_MENU
                                 self.paused = False
@@ -708,6 +737,7 @@ class PygameRunner:
                         else:
                             self.pause_view.confirming_restart = False
                             self.pause_view.confirming_menu = False
+                            self.pause_view.confirming_give_up = False
                             self.menu_focus = 0
                     else:
                         if self.menu_focus == 0:
@@ -719,6 +749,9 @@ class PygameRunner:
                         elif self.menu_focus == 2:
                             self._open_settings()
                         elif self.menu_focus == 3:
+                            self.previous_state = GameState.PLAYER_VS_AI
+                            self.state = GameState.HOW_TO_PLAY
+                        elif self.menu_focus == 4:
                             self.pause_view.confirming_menu = True
                             self.menu_focus = 1
                 return
@@ -748,14 +781,16 @@ class PygameRunner:
                 if self.pending_lock:
                     self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
-                while self.engine.move_active_piece(0, 1):
-                    pass
-                self.event_bus.emit("hard_drop")
-                self.pending_lock = True
-                self.lock_timer_ms = 0.0
-                self.piece_drop_accumulator_ms = 0
-                self.fast_dropping = False
-                self.current_fall_delay = self.config.fall_delay
+                if not self.hard_drop_held:
+                    self.hard_drop_held = True
+                    while self.engine.move_active_piece(0, 1):
+                        pass
+                    self.event_bus.emit("hard_drop")
+                    self.pending_lock = True
+                    self.lock_timer_ms = 0.0
+                    self.piece_drop_accumulator_ms = 0
+                    self.fast_dropping = False
+                    self.current_fall_delay = self.config.fall_delay
             elif event.key in self.config.key_down:
                 if not self.pending_lock:
                     self.fast_dropping = True
@@ -765,6 +800,8 @@ class PygameRunner:
             if event.key in self.config.key_down:
                 self.fast_dropping = False
                 self.current_fall_delay = self.config.fall_delay
+            elif event.key in self.config.key_drop:
+                self.hard_drop_held = False
 
     def _handle_how_to_play_events(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -867,6 +904,9 @@ class PygameRunner:
             elif event.key in self.config.key_up:
                 self.menu_focus = (self.menu_focus - 1) % _n_items
                 self.event_bus.emit("menu_nav")
+            elif event.key == pygame.K_ESCAPE:
+                self.main_menu_view.confirming_quit = True
+                self.menu_focus = 1
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.event_bus.emit("menu_select")
                 # indices: play=0, [vs=1,] settings, scores, help, quit
@@ -928,6 +968,10 @@ class PygameRunner:
                 if self.pause_view.yes_button_contains(screen_rect, event.pos):
                     if self.pause_view.confirming_restart:
                         self._restart_game()
+                    elif self.pause_view.confirming_give_up:
+                        self.engine.game_over = True
+                        self.paused = False
+                        self.pause_view.confirming_give_up = False
                     elif self.pause_view.confirming_menu:
                         self.state = GameState.MAIN_MENU
                         self.paused = False
@@ -936,6 +980,7 @@ class PygameRunner:
                 if self.pause_view.no_button_contains(screen_rect, event.pos):
                     self.pause_view.confirming_restart = False
                     self.pause_view.confirming_menu = False
+                    self.pause_view.confirming_give_up = False
                     return
 
                 if self.pause_view.resume_button_contains(
@@ -952,6 +997,12 @@ class PygameRunner:
                     screen_rect, event.pos
                 ):
                     self._open_settings()
+                    return
+                if self.pause_view.help_button_contains(
+                    screen_rect, event.pos
+                ):
+                    self.previous_state = GameState.PLAYING
+                    self.state = GameState.HOW_TO_PLAY
                     return
                 if self.pause_view.menu_button_contains(
                     screen_rect, event.pos
@@ -975,7 +1026,9 @@ class PygameRunner:
                 if self.screen_view.skull_button_contains(
                     screen_rect, event.pos
                 ):
-                    self.engine.game_over = True
+                    self.paused = True
+                    self.pause_view.confirming_give_up = True
+                    self.menu_focus = 1
                     return
 
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
@@ -1027,8 +1080,9 @@ class PygameRunner:
                 confirming = (
                     self.pause_view.confirming_restart
                     or self.pause_view.confirming_menu
+                    or self.pause_view.confirming_give_up
                 )
-                n = 2 if confirming else 4
+                n = 2 if confirming else 5
                 if event.key in self.config.key_down or event.key in self.config.key_right:
                     self.menu_focus = (self.menu_focus + 1) % n
                 elif event.key in self.config.key_up or event.key in self.config.key_left:
@@ -1038,6 +1092,10 @@ class PygameRunner:
                         if self.menu_focus == 0:
                             if self.pause_view.confirming_restart:
                                 self._restart_game()
+                            elif self.pause_view.confirming_give_up:
+                                self.engine.game_over = True
+                                self.paused = False
+                                self.pause_view.confirming_give_up = False
                             else:
                                 self.state = GameState.MAIN_MENU
                                 self.paused = False
@@ -1045,6 +1103,7 @@ class PygameRunner:
                         else:
                             self.pause_view.confirming_restart = False
                             self.pause_view.confirming_menu = False
+                            self.pause_view.confirming_give_up = False
                             self.menu_focus = 0
                     else:
                         if self.menu_focus == 0:
@@ -1056,11 +1115,14 @@ class PygameRunner:
                         elif self.menu_focus == 2:
                             self._open_settings()
                         elif self.menu_focus == 3:
+                            self.previous_state = GameState.PLAYING
+                            self.state = GameState.HOW_TO_PLAY
+                        elif self.menu_focus == 4:
                             self.pause_view.confirming_menu = True
                             self.menu_focus = 1
                 return
 
-            if self.fast_dropping:
+            if self.fast_dropping and event.key not in self.config.key_drop:
                 return
 
             if event.key in self.config.key_left:
@@ -1085,18 +1147,27 @@ class PygameRunner:
                 if self.pending_lock:
                     self.lock_timer_ms = self.config.lock_delay_ms
             elif event.key in self.config.key_drop:
-                while self.engine.move_active_piece(0, 1):
-                    pass
-                self.event_bus.emit("hard_drop")
-                self.pending_lock = True
-                self.lock_timer_ms = 0.0
-                self.piece_drop_accumulator_ms = 0
-                self.fast_dropping = False
-                self.current_fall_delay = self.config.fall_delay
+                if not self.hard_drop_held:
+                    self.hard_drop_held = True
+                    while self.engine.move_active_piece(0, 1):
+                        pass
+                    self.event_bus.emit("hard_drop")
+                    self.pending_lock = True
+                    self.lock_timer_ms = 0.0
+                    self.piece_drop_accumulator_ms = 0
+                    self.fast_dropping = False
+                    self.current_fall_delay = self.config.fall_delay
             elif event.key in self.config.key_down:
                 if not self.pending_lock:
                     self.fast_dropping = True
                     self.current_fall_delay = self.config.fast_fall_delay
+
+        if event.type == pygame.KEYUP:
+            if event.key in self.config.key_drop:
+                self.hard_drop_held = False
+            elif event.key in self.config.key_down:
+                self.fast_dropping = False
+                self.current_fall_delay = self.config.fall_delay
 
     def _update_vs(self, dt_ms: float) -> None:
         if self._game_over_input_cooldown_ms > 0:
@@ -1527,6 +1598,7 @@ class PygameRunner:
             self.engine.combo_timer_ms,
             pygame.mouse.get_pos(),
             self.mouse_down,
+            mode_label="SOLO",
         )
 
         if self.level_up_timer_ms > 0 and not self.engine.game_over:

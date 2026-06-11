@@ -29,12 +29,23 @@ Tetris + falling sand physics. Pieces dissolve into sand particles on lock. Clea
 
 ## Install
 
-Requires Python 3.12+ and `uv`.
+Requires Python 3.12+.
 
+**Option 1 — uv (recommended):**
+```bash
+pip install uv
+git clone https://github.com/Drewienko/sandtris.git
+cd sandtris
+uv sync --extra ai-torch
+uv run sandtris
+```
+
+**Option 2 — pip only:**
 ```bash
 git clone https://github.com/Drewienko/sandtris.git
 cd sandtris
-uv run sandtris
+pip install pygame-ce numpy scipy torch
+python -m sandtris.main
 ```
 
 ## AI

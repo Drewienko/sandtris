@@ -88,7 +88,11 @@ class VsScreen:
         }
 
     def get_result_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
-        modal = pygame.Rect(0, 0, 320, 290)
+        modal = pygame.Rect(
+            0, 0,
+            min(320, surface_rect.width - 40),
+            min(290, surface_rect.height - 40),
+        )
         modal.center = surface_rect.center
         margin = self.dims.modal_button_margin
         btn_h = self.dims.modal_button_height

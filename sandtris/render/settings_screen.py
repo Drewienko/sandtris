@@ -122,6 +122,11 @@ class SettingsScreen:
     ) -> bool:
         return self.get_layout(surface_rect)["sfx_row"].collidepoint(pos)
 
+    def _card_height(self, section: pygame.Rect, n: int) -> int:
+        gap = self.dims.gap
+        available = section.height - 56 - n * gap
+        return max(36, min(92, available // n))
+
     def get_theme_hitboxes(
         self, surface_rect: pygame.Rect
     ) -> dict[str, pygame.Rect]:
@@ -129,14 +134,14 @@ class SettingsScreen:
         section = layout["theme_section"]
         margin = self.dims.margin
         gap = self.dims.gap
-        card_height = 92
+        card_h = self._card_height(section, len(THEME_PRESETS))
         hitboxes: dict[str, pygame.Rect] = {}
         for index, name in enumerate(THEME_PRESETS):
             hitboxes[name] = pygame.Rect(
                 section.left + margin,
-                section.top + 56 + index * (card_height + gap),
+                section.top + 56 + index * (card_h + gap),
                 section.width - margin * 2,
-                card_height,
+                card_h,
             )
         return hitboxes
 
@@ -147,14 +152,14 @@ class SettingsScreen:
         section = layout["sand_section"]
         margin = self.dims.margin
         gap = self.dims.gap
-        card_height = 92
+        card_h = self._card_height(section, len(SAND_PALETTE_PRESETS))
         hitboxes: dict[str, pygame.Rect] = {}
         for index, name in enumerate(SAND_PALETTE_PRESETS):
             hitboxes[name] = pygame.Rect(
                 section.left + margin,
-                section.top + 56 + index * (card_height + gap),
+                section.top + 56 + index * (card_h + gap),
                 section.width - margin * 2,
-                card_height,
+                card_h,
             )
         return hitboxes
 
@@ -207,15 +212,16 @@ class SettingsScreen:
         lbl = self.body_font.render(label, True, self.theme.body_text)
         surface.blit(lbl, lbl.get_rect(left=rect.left + m, centery=rect.centery))
         pct = self.body_font.render(f"{int(round(value * 100))}%", True, self.theme.title_text)
-        bar_w = rect.width - m * 2 - lbl.get_width() - pct.get_width() - 24
+        bar_w = max(0, rect.width - m * 2 - lbl.get_width() - pct.get_width() - 24)
         bar_x = rect.left + m + lbl.get_width() + 12
         bar_h, bar_y = 10, rect.centery - 5
-        pygame.draw.rect(surface, self.theme.panel_border,
-                         (bar_x, bar_y, bar_w, bar_h), border_radius=4)
-        fill = int(bar_w * value)
-        if fill > 0:
-            pygame.draw.rect(surface, self.theme.accent_panel,
-                             (bar_x, bar_y, fill, bar_h), border_radius=4)
+        if bar_w > 0:
+            pygame.draw.rect(surface, self.theme.panel_border,
+                             (bar_x, bar_y, bar_w, bar_h), border_radius=4)
+            fill = int(bar_w * value)
+            if fill > 0:
+                pygame.draw.rect(surface, self.theme.accent_panel,
+                                 (bar_x, bar_y, fill, bar_h), border_radius=4)
         surface.blit(pct, pct.get_rect(left=bar_x + bar_w + 8, centery=rect.centery))
 
     def draw(

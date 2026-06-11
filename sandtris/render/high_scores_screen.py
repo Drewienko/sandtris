@@ -83,12 +83,13 @@ class HighScoresScreen:
             )
         else:
             col_labels = ["#", "PLAYER", "SCORE", "LV", "COMBO", "DATE"]
+            inner_w = panel.width - margin * 2
             col_xs = [
                 panel.left + margin,
-                panel.left + margin + 28,
-                panel.left + margin + 130,
-                panel.left + margin + 230,
-                panel.left + margin + 270,
+                panel.left + margin + inner_w * 5 // 100,
+                panel.left + margin + inner_w * 24 // 100,
+                panel.left + margin + inner_w * 44 // 100,
+                panel.left + margin + inner_w * 52 // 100,
                 panel.right - margin,
             ]
             col_anchors = ["left", "left", "left", "left", "left", "right"]
@@ -111,7 +112,7 @@ class HighScoresScreen:
 
             y = sep_y + line_h // 2
 
-            for rank, entry in enumerate(high_scores[:10], start=1):
+            for rank, entry in enumerate(high_scores[:20], start=1):
                 color = (
                     self.theme.accent_text
                     if rank == 1

@@ -23,6 +23,7 @@ class PauseScreen:
         self.resume_button = PixelButton("RESUME")
         self.restart_button = PixelButton("RESTART")
         self.settings_button = PixelButton("SETTINGS")
+        self.help_button = PixelButton("HOW TO PLAY")
         self.menu_button = PixelButton("MAIN MENU")
 
         self.yes_button = PixelButton("YES")
@@ -30,13 +31,14 @@ class PauseScreen:
 
         self.confirming_restart = False
         self.confirming_menu = False
+        self.confirming_give_up = False
 
     def get_layout(self, surface_rect: pygame.Rect) -> dict[str, pygame.Rect]:
         btn_h = self.dims.modal_button_height
         margin = self.dims.modal_button_margin
         step = self.dims.modal_button_step
 
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             modal = pygame.Rect(0, 0, 320, 200)
             modal.center = surface_rect.center
             return {
@@ -57,7 +59,7 @@ class PauseScreen:
                 ),
             }
 
-        modal = pygame.Rect(0, 0, 280, 320)
+        modal = pygame.Rect(0, 0, 280, 380)
         modal.center = surface_rect.center
 
         return {
@@ -80,9 +82,15 @@ class PauseScreen:
                 modal.width - margin * 2,
                 btn_h,
             ),
-            "menu": pygame.Rect(
+            "help": pygame.Rect(
                 modal.left + margin,
                 modal.top + 70 + step * 3,
+                modal.width - margin * 2,
+                btn_h,
+            ),
+            "menu": pygame.Rect(
+                modal.left + margin,
+                modal.top + 70 + step * 4,
                 modal.width - margin * 2,
                 btn_h,
             ),
@@ -91,42 +99,49 @@ class PauseScreen:
     def resume_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             return False
         return self.get_layout(surface_rect)["resume"].collidepoint(pos)
 
     def restart_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             return False
         return self.get_layout(surface_rect)["restart"].collidepoint(pos)
 
     def settings_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             return False
         return self.get_layout(surface_rect)["settings"].collidepoint(pos)
+
+    def help_button_contains(
+        self, surface_rect: pygame.Rect, pos: tuple[int, int]
+    ) -> bool:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
+            return False
+        return self.get_layout(surface_rect)["help"].collidepoint(pos)
 
     def menu_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             return False
         return self.get_layout(surface_rect)["menu"].collidepoint(pos)
 
     def yes_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if not (self.confirming_restart or self.confirming_menu):
+        if not (self.confirming_restart or self.confirming_menu or self.confirming_give_up):
             return False
         return self.get_layout(surface_rect)["yes"].collidepoint(pos)
 
     def no_button_contains(
         self, surface_rect: pygame.Rect, pos: tuple[int, int]
     ) -> bool:
-        if not (self.confirming_restart or self.confirming_menu):
+        if not (self.confirming_restart or self.confirming_menu or self.confirming_give_up):
             return False
         return self.get_layout(surface_rect)["no"].collidepoint(pos)
 
@@ -157,12 +172,14 @@ class PauseScreen:
             title_str = "RESTART?"
         elif self.confirming_menu:
             title_str = "TO MENU?"
+        elif self.confirming_give_up:
+            title_str = "GIVE UP?"
 
         title = self.title_font.render(title_str, True, self.theme.body_text)
         title_rect = title.get_rect(center=(modal.centerx, modal.top + 46))
         surface.blit(title, title_rect)
 
-        if self.confirming_restart or self.confirming_menu:
+        if self.confirming_restart or self.confirming_menu or self.confirming_give_up:
             for idx, (key, btn) in enumerate([
                 ("yes", self.yes_button),
                 ("no", self.no_button),
@@ -176,6 +193,7 @@ class PauseScreen:
                 ("resume", self.resume_button),
                 ("restart", self.restart_button),
                 ("settings", self.settings_button),
+                ("help", self.help_button),
                 ("menu", self.menu_button),
             ]):
                 mouse_hov = layout[key].collidepoint(mouse_pos)
